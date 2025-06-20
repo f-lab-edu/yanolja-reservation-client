@@ -7,7 +7,7 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import { AuthContextType, User } from "@/types/auth";
+import { AuthContextType, User, RegisterRequest } from "@/types/auth";
 import { authApi } from "@/lib/api";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -64,6 +64,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
+  const register = async (registerData: RegisterRequest): Promise<boolean> => {
+    try {
+      setLoading(true);
+      const response = await authApi.register(registerData);
+
+      if (response.success) {
+        // 회원가입 성공
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("회원가입 오류:", error);
+      // 에러를 그대로 다시 던져서 컴포넌트에서 구체적인 처리가 가능하도록 함
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = async () => {
     try {
       const refreshToken = localStorage.getItem("refreshToken");
@@ -84,6 +103,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     isAuthenticated: !!user,
     user,
     login,
+    register,
     logout,
     loading,
   };

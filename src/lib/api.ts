@@ -1,4 +1,10 @@
-import { LoginRequest, ApiResponse, TokenResponse } from "@/types/auth";
+import {
+  LoginRequest,
+  RegisterRequest,
+  ApiResponse,
+  TokenResponse,
+  User,
+} from "@/types/auth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -31,10 +37,24 @@ class ApiClient {
 
     try {
       const response = await fetch(url, config);
-      const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.message || "요청에 실패했습니다.");
+      // 응답이 비어있거나 JSON이 아닌 경우 처리
+      let data;
+      try {
+        const text = await response.text();
+        data = text ? JSON.parse(text) : {};
+      } catch (jsonError) {
+        console.error("JSON 파싱 오류:", jsonError);
+        throw new Error("서버 응답 형식이 올바르지 않습니다.");
+      }
+
+      if (!response.ok || !data.success) {
+        const errorMessage =
+          data.message || `HTTP ${response.status}: ${response.statusText}`;
+        const error = new Error(errorMessage);
+        // @ts-ignore
+        error.code = data.code;
+        throw error;
       }
 
       return data;
@@ -77,6 +97,14 @@ export const apiClient = new ApiClient(API_BASE_URL);
 export const authApi = {
   login: (loginData: LoginRequest) =>
     apiClient.post<TokenResponse>("/api/auth/login", loginData),
+
+  register: (registerData: RegisterRequest) =>
+    apiClient.post<User>("/api/users/register", registerData),
+
+  checkEmailDuplicate: (email: string) =>
+    apiClient.get<boolean>(
+      `/api/users/check-email?email=${encodeURIComponent(email)}`
+    ),
 
   logout: (refreshToken: string) =>
     apiClient.post("/api/auth/logout", { refreshToken }),

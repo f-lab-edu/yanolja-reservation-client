@@ -3,6 +3,13 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface RegisterRequest {
+  name: string;
+  email: string;
+  password: string;
+  phone: string;
+}
+
 export interface TokenResponse {
   accessToken: string;
   refreshToken: string;
@@ -25,6 +32,7 @@ export interface AuthContextType {
   isAuthenticated: boolean;
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
+  register: (registerData: RegisterRequest) => Promise<boolean>;
   logout: () => void;
   loading: boolean;
 }

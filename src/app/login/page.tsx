@@ -1,14 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, loading, isAuthenticated } = useAuth();
 
   // 이미 로그인된 경우 메인 페이지로 리다이렉트
@@ -17,6 +19,14 @@ export default function LoginPage() {
       router.push("/");
     }
   }, [isAuthenticated, router]);
+
+  // URL 파라미터에서 성공 메시지 확인
+  useEffect(() => {
+    const message = searchParams.get("message");
+    if (message) {
+      setSuccessMessage(decodeURIComponent(message));
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,6 +63,13 @@ export default function LoginPage() {
               계정에 로그인하여 예약을 시작하세요
             </p>
           </div>
+
+          {/* 성공 메시지 */}
+          {successMessage && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-600">{successMessage}</p>
+            </div>
+          )}
 
           {/* 에러 메시지 */}
           {error && (
