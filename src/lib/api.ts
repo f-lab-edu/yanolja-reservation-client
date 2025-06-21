@@ -132,6 +132,13 @@ class ApiClient {
     });
   }
 
+  async patch<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, {
+      method: "PATCH",
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
   async uploadFiles<T>(
     endpoint: string,
     formData: FormData
@@ -255,6 +262,92 @@ export const accommodationApi = {
 
   deleteAccommodationImage: (imageId: number) =>
     apiClient.delete<void>(`/api/accommodations/images/${imageId}`),
+};
+
+// 예약 관련 API 함수들
+export const reservationApi = {
+  // 포털 사용자용 예약 API
+  createReservation: (data: import("@/types/reservation").ReservationRequest) =>
+    apiClient.post<import("@/types/reservation").ReservationResponse>(
+      "/api/portal/reservations",
+      data
+    ),
+
+  getReservation: (id: number) =>
+    apiClient.get<import("@/types/reservation").ReservationResponse>(
+      `/api/portal/reservations/${id}`
+    ),
+
+  getUserReservations: (status?: string, page = 0, size = 10) => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      size: size.toString(),
+    });
+    if (status) params.append("status", status);
+
+    return apiClient.get<
+      import("@/types/reservation").PageResponse<
+        import("@/types/reservation").ReservationListResponse
+      >
+    >(`/api/portal/reservations?${params}`);
+  },
+
+  searchReservations: (
+    condition: import("@/types/reservation").ReservationSearchCondition,
+    page = 0,
+    size = 10
+  ) => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      size: size.toString(),
+    });
+
+    return apiClient.post<
+      import("@/types/reservation").PageResponse<
+        import("@/types/reservation").ReservationListResponse
+      >
+    >(`/api/portal/reservations/search?${params}`, condition);
+  },
+
+  updateReservationStatus: (
+    id: number,
+    data: import("@/types/reservation").ReservationStatusUpdateRequest
+  ) =>
+    apiClient.patch<import("@/types/reservation").ReservationResponse>(
+      `/api/portal/reservations/${id}/status`,
+      data
+    ),
+
+  cancelReservation: (id: number) =>
+    apiClient.patch<import("@/types/reservation").ReservationResponse>(
+      `/api/portal/reservations/${id}/cancel`
+    ),
+
+  getUserReservationStats: () =>
+    apiClient.get<any[]>("/api/portal/reservations/stats"),
+
+  // 관리자용 예약 API
+  confirmReservation: (id: number) =>
+    apiClient.patch<import("@/types/reservation").ReservationResponse>(
+      `/api/v1/reservations/${id}/confirm`
+    ),
+
+  getRoomReservationStatus: (
+    roomId: number,
+    startDate: string,
+    endDate: string
+  ) => {
+    const params = new URLSearchParams({
+      startDate,
+      endDate,
+    });
+    return apiClient.get<any[]>(
+      `/api/v1/reservations/rooms/${roomId}/status?${params}`
+    );
+  },
+
+  cleanupExpiredReservations: () =>
+    apiClient.post<void>("/api/v1/reservations/cleanup"),
 };
 
 // 편의시설 관련 API 함수들

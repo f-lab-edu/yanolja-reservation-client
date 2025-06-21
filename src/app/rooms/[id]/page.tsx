@@ -26,6 +26,10 @@ export default function RoomDetailPage() {
     [key: number]: number;
   }>({});
 
+  // 예약 처리 상태
+  const [totalPrice, setTotalPrice] = useState(0);
+  const [nights, setNights] = useState(0);
+
   const roomId = Number(params.id);
 
   useEffect(() => {
@@ -45,6 +49,118 @@ export default function RoomDetailPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 총 가격 계산
+  const calculateTotalPrice = () => {
+    if (!room || !checkInDate || !checkOutDate) return;
+
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+    const timeDiff = checkOut.getTime() - checkIn.getTime();
+    const nightCount = Math.ceil(timeDiff / (1000 * 3600 * 24));
+
+    if (nightCount <= 0) return;
+
+    let total = room.pricePerNight * nightCount;
+
+    // 선택된 옵션 가격 추가
+    if (room.options) {
+      room.options.forEach((option) => {
+        const quantity = selectedOptions[option.id] || 0;
+        total += option.price * quantity * nightCount;
+      });
+    }
+
+    setNights(nightCount);
+    setTotalPrice(total);
+  };
+
+  // 날짜나 옵션 변경 시 가격 재계산
+  useEffect(() => {
+    calculateTotalPrice();
+  }, [checkInDate, checkOutDate, selectedOptions, room]);
+
+  // 예약 처리
+  const handleReservation = async () => {
+    if (!isAuthenticated) {
+      if (confirm("로그인이 필요합니다. 로그인 페이지로 이동하시겠습니까?")) {
+        router.push("/login");
+      }
+      return;
+    }
+
+    if (!checkInDate || !checkOutDate) {
+      alert("체크인/체크아웃 날짜를 선택해주세요.");
+      return;
+    }
+
+    // 오늘 날짜와 비교하여 과거 날짜 검증
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // 시간을 00:00:00으로 설정
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+
+    if (checkIn < today) {
+      alert("체크인 날짜는 오늘 이후여야 합니다.");
+      return;
+    }
+
+    if (checkOut <= checkIn) {
+      alert("체크아웃 날짜는 체크인 날짜보다 이후여야 합니다.");
+      return;
+    }
+
+    try {
+      setIsBooking(true);
+
+      const reservationData: ReservationRequest = {
+        roomId: roomId,
+        checkInDate,
+        checkOutDate,
+        totalPrice,
+        options: room?.options
+          ?.map((option) => ({
+            optionId: option.id,
+            quantity: selectedOptions[option.id] || 0,
+            price: option.price,
+          }))
+          .filter((opt) => opt.quantity > 0),
+      };
+
+      const response = await reservationApi.createReservation(reservationData);
+
+      alert("예약이 성공적으로 완료되었습니다!");
+      router.push("/my-reservations");
+    } catch (error: any) {
+      console.error("예약 실패:", error);
+      alert(error.message || "예약에 실패했습니다. 다시 시도해주세요.");
+    } finally {
+      setIsBooking(false);
+    }
+  };
+
+  // 날짜 변경 처리
+  const handleCheckInDateChange = (date: string) => {
+    setCheckInDate(date);
+
+    // 체크인 날짜가 체크아웃 날짜와 같거나 이후라면 체크아웃 날짜를 자동으로 조정
+    if (checkOutDate && date >= checkOutDate) {
+      const nextDay = new Date(new Date(date).getTime() + 24 * 60 * 60 * 1000);
+      setCheckOutDate(nextDay.toISOString().split("T")[0]);
+    }
+  };
+
+  const handleCheckOutDateChange = (date: string) => {
+    setCheckOutDate(date);
+  };
+
+  // 옵션 수량 변경
+  const handleOptionChange = (optionId: number, quantity: number) => {
+    setSelectedOptions((prev) => ({
+      ...prev,
+      [optionId]: Math.max(0, quantity),
+    }));
   };
 
   if (isLoading) {
@@ -108,162 +224,76 @@ export default function RoomDetailPage() {
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 {/* 메인 이미지 */}
                 <div className="lg:col-span-3">
-                  <div className="relative">
-                    <img
-                      src={getImageUrl(room.imageUrls[selectedImageIndex])}
-                      alt={room.name}
-                      className="w-full h-64 lg:h-96 object-cover rounded-lg"
-                    />
-
-                    {/* 이미지 네비게이션 버튼 */}
-                    {room.imageUrls.length > 1 && (
-                      <>
-                        <button
-                          onClick={() =>
-                            setSelectedImageIndex(
-                              selectedImageIndex === 0
-                                ? room.imageUrls!.length - 1
-                                : selectedImageIndex - 1
-                            )
-                          }
-                          className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 hover:bg-opacity-75 text-white p-2 rounded-full transition-all"
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M15 19l-7-7 7-7"
-                            />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() =>
-                            setSelectedImageIndex(
-                              selectedImageIndex === room.imageUrls!.length - 1
-                                ? 0
-                                : selectedImageIndex + 1
-                            )
-                          }
-                          className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 hover:bg-opacity-75 text-white p-2 rounded-full transition-all"
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5l7 7-7 7"
-                            />
-                          </svg>
-                        </button>
-                      </>
-                    )}
-
-                    {/* 이미지 카운터 */}
-                    <div className="absolute bottom-4 right-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
-                      {selectedImageIndex + 1} / {room.imageUrls.length}
-                    </div>
-                  </div>
+                  <img
+                    src={getImageUrl(room.imageUrls[selectedImageIndex])}
+                    alt={room.name}
+                    className="w-full h-96 object-cover rounded-lg"
+                  />
                 </div>
 
                 {/* 썸네일 이미지들 */}
-                <div className="lg:col-span-1">
-                  <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 max-h-96 overflow-y-auto">
-                    {room.imageUrls.map((imageUrl, index) => (
-                      <button
-                        key={index}
-                        onClick={() => setSelectedImageIndex(index)}
-                        className={`relative rounded-lg overflow-hidden transition-all ${
-                          selectedImageIndex === index
-                            ? "ring-2 ring-blue-500 opacity-100"
-                            : "opacity-70 hover:opacity-100"
-                        }`}
-                      >
-                        <img
-                          src={getImageUrl(imageUrl)}
-                          alt={`${room.name} 이미지 ${index + 1}`}
-                          className="w-full h-20 lg:h-24 object-cover"
-                        />
-                      </button>
-                    ))}
-                  </div>
+                <div className="lg:col-span-1 space-y-2">
+                  {room.imageUrls.slice(0, 4).map((imageUrl, index) => (
+                    <img
+                      key={index}
+                      src={getImageUrl(imageUrl)}
+                      alt={`${room.name} ${index + 1}`}
+                      className={`w-full h-20 object-cover rounded-lg cursor-pointer transition-opacity ${
+                        selectedImageIndex === index
+                          ? "opacity-100 ring-2 ring-blue-500"
+                          : "opacity-70 hover:opacity-100"
+                      }`}
+                      onClick={() => setSelectedImageIndex(index)}
+                    />
+                  ))}
+                  {room.imageUrls.length > 4 && (
+                    <div className="w-full h-20 bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 text-sm">
+                      +{room.imageUrls.length - 4}장 더보기
+                    </div>
+                  )}
                 </div>
-              </div>
-            ) : room.mainImageUrl ? (
-              <div className="w-full h-64 lg:h-96">
-                <img
-                  src={getImageUrl(room.mainImageUrl)}
-                  alt={room.name}
-                  className="w-full h-full object-cover rounded-lg"
-                />
               </div>
             ) : (
-              <div className="w-full h-64 lg:h-96 bg-gray-200 rounded-lg flex items-center justify-center">
-                <div className="text-center">
-                  <svg
-                    className="w-16 h-16 text-gray-400 mx-auto mb-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                  <p className="text-gray-500">등록된 이미지가 없습니다</p>
-                </div>
+              <div className="w-full h-96 bg-gray-200 rounded-lg flex items-center justify-center">
+                <svg
+                  className="w-16 h-16 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
               </div>
             )}
           </div>
 
-          {/* 객실 정보 */}
-          <div className="px-6 pb-6">
+          {/* 객실 정보 및 예약 폼 */}
+          <div className="p-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* 왼쪽: 기본 정보 */}
+              {/* 왼쪽: 객실 정보 */}
               <div className="lg:col-span-2">
-                <h1 className="text-3xl font-bold text-gray-900 mb-4">
-                  {room.name}
-                </h1>
-
-                <div className="flex items-center space-x-6 text-gray-600 mb-6">
-                  <div className="flex items-center">
-                    <svg
-                      className="w-5 h-5 mr-2"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                      />
-                    </svg>
-                    최대 {room.capacity}명
-                  </div>
-                  <div className="flex items-center">
-                    <span
-                      className={`inline-block w-3 h-3 rounded-full mr-2 ${
-                        room.status === "AVAILABLE"
-                          ? "bg-green-400"
-                          : "bg-red-400"
-                      }`}
-                    ></span>
-                    {room.status === "AVAILABLE" ? "예약 가능" : "예약 불가"}
+                <div className="mb-6">
+                  <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                    {room.name}
+                  </h1>
+                  <div className="flex items-center space-x-4 text-gray-600">
+                    <span>최대 {room.capacity}명</span>
+                    <span>•</span>
+                    <div className="flex items-center">
+                      <span
+                        className={`inline-block w-2 h-2 rounded-full mr-2 ${
+                          room.status === "AVAILABLE"
+                            ? "bg-green-400"
+                            : "bg-red-400"
+                        }`}
+                      ></span>
+                      {room.status === "AVAILABLE" ? "예약 가능" : "예약 불가"}
+                    </div>
                   </div>
                 </div>
 
@@ -284,16 +314,48 @@ export default function RoomDetailPage() {
                     <h2 className="text-xl font-semibold text-gray-900 mb-3">
                       추가 옵션
                     </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-3">
                       {room.options.map((option) => (
                         <div
                           key={option.id}
                           className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
                         >
-                          <span className="text-gray-700">{option.name}</span>
-                          <span className="font-semibold text-gray-900">
-                            +₩{option.price.toLocaleString()}
-                          </span>
+                          <div className="flex-1">
+                            <span className="text-gray-700 font-medium">
+                              {option.name}
+                            </span>
+                            <div className="text-sm text-gray-500">
+                              +₩{option.price.toLocaleString()} / 박
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() =>
+                                handleOptionChange(
+                                  option.id,
+                                  (selectedOptions[option.id] || 0) - 1
+                                )
+                              }
+                              className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                              disabled={!selectedOptions[option.id]}
+                            >
+                              -
+                            </button>
+                            <span className="w-8 text-center">
+                              {selectedOptions[option.id] || 0}
+                            </span>
+                            <button
+                              onClick={() =>
+                                handleOptionChange(
+                                  option.id,
+                                  (selectedOptions[option.id] || 0) + 1
+                                )
+                              }
+                              className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                            >
+                              +
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -386,7 +448,7 @@ export default function RoomDetailPage() {
 
                   {room.status === "AVAILABLE" ? (
                     <>
-                      {/* 예약 폼 (간단한 버전) */}
+                      {/* 예약 폼 */}
                       <div className="space-y-4 mb-6">
                         <div className="grid grid-cols-2 gap-2">
                           <div>
@@ -395,6 +457,10 @@ export default function RoomDetailPage() {
                             </label>
                             <input
                               type="date"
+                              value={checkInDate}
+                              onChange={(e) =>
+                                handleCheckInDateChange(e.target.value)
+                              }
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                               min={new Date().toISOString().split("T")[0]}
                             />
@@ -405,8 +471,25 @@ export default function RoomDetailPage() {
                             </label>
                             <input
                               type="date"
+                              value={checkOutDate}
+                              onChange={(e) =>
+                                handleCheckOutDateChange(e.target.value)
+                              }
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                              min={new Date().toISOString().split("T")[0]}
+                              min={
+                                checkInDate
+                                  ? new Date(
+                                      new Date(checkInDate).getTime() +
+                                        24 * 60 * 60 * 1000
+                                    )
+                                      .toISOString()
+                                      .split("T")[0]
+                                  : new Date(
+                                      new Date().getTime() + 24 * 60 * 60 * 1000
+                                    )
+                                      .toISOString()
+                                      .split("T")[0]
+                              }
                             />
                           </div>
                         </div>
@@ -414,7 +497,11 @@ export default function RoomDetailPage() {
                           <label className="block text-sm font-medium text-gray-700 mb-1">
                             인원
                           </label>
-                          <select className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                          <select
+                            value={guests}
+                            onChange={(e) => setGuests(Number(e.target.value))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          >
                             {Array.from(
                               { length: room.capacity },
                               (_, i) => i + 1
@@ -427,8 +514,74 @@ export default function RoomDetailPage() {
                         </div>
                       </div>
 
-                      <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium transition-colors duration-200 mb-4">
-                        예약하기
+                      {/* 가격 계산 */}
+                      {checkInDate && checkOutDate && nights > 0 && (
+                        <div className="mb-6 p-4 bg-white rounded-lg border">
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span>
+                                ₩{room.pricePerNight.toLocaleString()} ×{" "}
+                                {nights}박
+                              </span>
+                              <span>
+                                ₩
+                                {(room.pricePerNight * nights).toLocaleString()}
+                              </span>
+                            </div>
+                            {room.options &&
+                              Object.keys(selectedOptions).some(
+                                (id) => selectedOptions[Number(id)] > 0
+                              ) && (
+                                <>
+                                  <div className="text-gray-600 font-medium">
+                                    추가 옵션:
+                                  </div>
+                                  {room.options.map((option) => {
+                                    const quantity =
+                                      selectedOptions[option.id] || 0;
+                                    if (quantity === 0) return null;
+                                    return (
+                                      <div
+                                        key={option.id}
+                                        className="flex justify-between text-gray-600"
+                                      >
+                                        <span>
+                                          {option.name} × {quantity} × {nights}
+                                          박
+                                        </span>
+                                        <span>
+                                          ₩
+                                          {(
+                                            option.price *
+                                            quantity *
+                                            nights
+                                          ).toLocaleString()}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </>
+                              )}
+                            <hr />
+                            <div className="flex justify-between font-semibold">
+                              <span>총 금액</span>
+                              <span>₩{totalPrice.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={handleReservation}
+                        disabled={
+                          isBooking ||
+                          !checkInDate ||
+                          !checkOutDate ||
+                          nights <= 0
+                        }
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium transition-colors duration-200 mb-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isBooking ? "예약 처리 중..." : "예약하기"}
                       </button>
                     </>
                   ) : (
