@@ -54,6 +54,20 @@ export default function HomePage() {
                   <span className="text-gray-700">
                     안녕하세요, {user?.name || user?.email}님!
                   </span>
+                  <Link
+                    href="/profile"
+                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors duration-200 text-sm"
+                  >
+                    내 프로필
+                  </Link>
+                  {user?.role === "ADMIN" && (
+                    <Link
+                      href="/admin"
+                      className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors duration-200 text-sm"
+                    >
+                      관리자
+                    </Link>
+                  )}
                   <button
                     onClick={handleLogout}
                     className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors duration-200"
@@ -99,9 +113,23 @@ export default function HomePage() {
                 >
                   숙소 둘러보기
                 </Link>
+                <Link
+                  href="/profile"
+                  className="block w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg transition-colors duration-200 text-center"
+                >
+                  내 프로필
+                </Link>
                 <button className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-4 rounded-lg transition-colors duration-200">
                   내 예약 확인
                 </button>
+                {user?.role === "ADMIN" && (
+                  <Link
+                    href="/admin"
+                    className="block w-full bg-purple-600 hover:bg-purple-700 text-white py-3 px-4 rounded-lg transition-colors duration-200 text-center"
+                  >
+                    관리자 대시보드
+                  </Link>
+                )}
               </div>
             </div>
           ) : (
