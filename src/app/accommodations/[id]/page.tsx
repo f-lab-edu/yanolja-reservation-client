@@ -468,15 +468,10 @@ export default function AccommodationDetailPage() {
                                 <div className="flex space-x-2">
                                   <Link
                                     href={`/rooms/${room.id}`}
-                                    className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                                    className="px-4 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                                   >
                                     상세보기
                                   </Link>
-                                  {room.status === "AVAILABLE" && (
-                                    <button className="px-4 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
-                                      예약하기
-                                    </button>
-                                  )}
                                 </div>
                               </div>
 
