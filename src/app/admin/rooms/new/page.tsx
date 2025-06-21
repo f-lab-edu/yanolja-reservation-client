@@ -13,6 +13,8 @@ export default function NewRoomPage() {
     AccommodationListResponse[]
   >([]);
   const [availableOptions, setAvailableOptions] = useState<RoomOption[]>([]);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
   const [formData, setFormData] = useState<RoomRequest>({
     accommodationId: 0,
     name: "",
@@ -27,6 +29,13 @@ export default function NewRoomPage() {
     fetchAccommodations();
     fetchRoomOptions();
   }, []);
+
+  // 컴포넌트 언마운트 시 미리보기 URL 정리
+  useEffect(() => {
+    return () => {
+      imagePreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [imagePreviewUrls]);
 
   const fetchAccommodations = async () => {
     try {
@@ -78,7 +87,21 @@ export default function NewRoomPage() {
 
     try {
       setLoading(true);
-      await roomApi.createRoom(formData);
+
+      // 먼저 객실을 생성
+      const roomResponse = await roomApi.createRoom(formData);
+      const roomId = roomResponse.data.id;
+
+      // 이미지가 선택된 경우 업로드
+      if (selectedImages.length > 0) {
+        try {
+          await roomApi.uploadRoomImages(roomId, selectedImages, 0); // 첫 번째 이미지를 대표 이미지로
+        } catch (imageErr) {
+          console.error("이미지 업로드 실패:", imageErr);
+          alert("객실은 등록되었지만 이미지 업로드에 실패했습니다.");
+        }
+      }
+
       alert("객실이 성공적으로 등록되었습니다.");
       router.push("/admin/rooms");
     } catch (err) {
@@ -293,6 +316,82 @@ export default function NewRoomPage() {
               </div>
             </div>
           )}
+
+          {/* 이미지 업로드 */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h2 className="text-lg font-medium text-gray-900 mb-6">
+              객실 이미지
+            </h2>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                이미지 업로드 (선택사항)
+              </label>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  setSelectedImages(files);
+
+                  // 미리보기 URL 생성
+                  const previewUrls = files.map((file) =>
+                    URL.createObjectURL(file)
+                  );
+                  setImagePreviewUrls(previewUrls);
+                }}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              <p className="mt-2 text-sm text-gray-500">
+                여러 이미지를 선택할 수 있습니다. 첫 번째 이미지가 대표 이미지로
+                설정됩니다.
+              </p>
+
+              {/* 이미지 미리보기 */}
+              {imagePreviewUrls.length > 0 && (
+                <div className="mt-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">
+                    선택된 이미지 미리보기
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {imagePreviewUrls.map((url, index) => (
+                      <div key={index} className="relative group">
+                        <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                          <img
+                            src={url}
+                            alt={`미리보기 ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        {index === 0 && (
+                          <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded">
+                            대표
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newFiles = selectedImages.filter(
+                              (_, i) => i !== index
+                            );
+                            const newUrls = imagePreviewUrls.filter(
+                              (_, i) => i !== index
+                            );
+                            setSelectedImages(newFiles);
+                            setImagePreviewUrls(newUrls);
+                            URL.revokeObjectURL(url); // 메모리 정리
+                          }}
+                          className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* 버튼 */}
           <div className="flex justify-end space-x-4">
