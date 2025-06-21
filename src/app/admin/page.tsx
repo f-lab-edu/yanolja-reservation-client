@@ -64,6 +64,13 @@ export default function AdminDashboard() {
       color: "bg-yellow-500",
     },
     {
+      title: "쿠폰 관리",
+      description: "쿠폰 생성, 발급, 상태 관리",
+      icon: "🎫",
+      href: "/admin/coupons",
+      color: "bg-orange-500",
+    },
+    {
       title: "사용자 관리",
       description: "사용자 정보 조회 및 관리",
       icon: "👥",
