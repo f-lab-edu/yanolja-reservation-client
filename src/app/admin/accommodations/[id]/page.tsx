@@ -4,11 +4,13 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import { accommodationApi, getImageUrl } from "@/lib/api";
+import { accommodationApi, amenityApi, getImageUrl } from "@/lib/api";
 import {
   AccommodationRequest,
   AccommodationResponse,
   AccommodationImageResponse,
+  AmenityResponse,
+  AmenityConnectionRequest,
 } from "@/types/accommodation";
 
 export default function EditAccommodationPage() {
@@ -36,6 +38,13 @@ export default function EditAccommodationPage() {
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // 편의시설 관련 상태
+  const [allAmenities, setAllAmenities] = useState<AmenityResponse[]>([]);
+  const [accommodationAmenities, setAccommodationAmenities] = useState<
+    AmenityResponse[]
+  >([]);
+  const [isAmenityLoading, setIsAmenityLoading] = useState(false);
+
   const accommodationId = Number(params.id);
 
   useEffect(() => {
@@ -48,6 +57,8 @@ export default function EditAccommodationPage() {
     if (accommodationId && user && user.role === "ADMIN") {
       fetchAccommodation();
       fetchImages();
+      fetchAllAmenities();
+      fetchAccommodationAmenities();
     }
   }, [accommodationId, user]);
 
@@ -87,6 +98,29 @@ export default function EditAccommodationPage() {
       console.error("이미지 조회 실패:", error);
     } finally {
       setIsImageLoading(false);
+    }
+  };
+
+  const fetchAllAmenities = async () => {
+    try {
+      const response = await amenityApi.getAllAmenities();
+      setAllAmenities(response.data);
+    } catch (error) {
+      console.error("전체 편의시설 목록 조회 실패:", error);
+    }
+  };
+
+  const fetchAccommodationAmenities = async () => {
+    try {
+      setIsAmenityLoading(true);
+      const response = await amenityApi.getAccommodationAmenities(
+        accommodationId
+      );
+      setAccommodationAmenities(response.data);
+    } catch (error) {
+      console.error("숙소 편의시설 조회 실패:", error);
+    } finally {
+      setIsAmenityLoading(false);
     }
   };
 
@@ -184,6 +218,40 @@ export default function EditAccommodationPage() {
     } catch (error) {
       console.error("이미지 삭제 실패:", error);
       alert("이미지 삭제에 실패했습니다.");
+    }
+  };
+
+  const handleAddAmenity = async (amenityId: number) => {
+    try {
+      setIsAmenityLoading(true);
+      const data: AmenityConnectionRequest = { amenityIds: [amenityId] };
+      await amenityApi.connectAmenitiesToAccommodation(accommodationId, data);
+      await fetchAccommodationAmenities();
+      alert("편의시설이 추가되었습니다.");
+    } catch (error) {
+      console.error("편의시설 추가 실패:", error);
+      alert("편의시설 추가에 실패했습니다.");
+    } finally {
+      setIsAmenityLoading(false);
+    }
+  };
+
+  const handleRemoveAmenity = async (amenityId: number) => {
+    if (!confirm("이 편의시설을 제거하시겠습니까?")) return;
+
+    try {
+      setIsAmenityLoading(true);
+      await amenityApi.removeAmenityFromAccommodation(
+        accommodationId,
+        amenityId
+      );
+      await fetchAccommodationAmenities();
+      alert("편의시설이 제거되었습니다.");
+    } catch (error) {
+      console.error("편의시설 제거 실패:", error);
+      alert("편의시설 제거에 실패했습니다.");
+    } finally {
+      setIsAmenityLoading(false);
     }
   };
 
@@ -519,6 +587,157 @@ export default function EditAccommodationPage() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* 편의시설 관리 */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            편의시설 관리
+          </h2>
+
+          {/* 현재 연결된 편의시설 */}
+          <div className="mb-6">
+            <h3 className="text-md font-medium text-gray-700 mb-3">
+              현재 편의시설 ({accommodationAmenities.length}개)
+            </h3>
+            {isAmenityLoading ? (
+              <div className="text-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+              </div>
+            ) : accommodationAmenities.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
+                연결된 편의시설이 없습니다.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {accommodationAmenities.map((amenity) => (
+                  <div
+                    key={amenity.id}
+                    className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200"
+                  >
+                    <div className="flex items-center">
+                      {amenity.iconUrl ? (
+                        <img
+                          src={amenity.iconUrl}
+                          alt={amenity.name}
+                          className="w-6 h-6 object-cover rounded mr-2"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 bg-blue-200 rounded mr-2 flex items-center justify-center">
+                          <svg
+                            className="w-4 h-4 text-blue-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
+                        </div>
+                      )}
+                      <span className="text-sm font-medium text-gray-900">
+                        {amenity.name}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveAmenity(amenity.id)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 편의시설 추가 */}
+          <div>
+            <h3 className="text-md font-medium text-gray-700 mb-3">
+              편의시설 추가
+            </h3>
+            {allAmenities.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
+                등록된 편의시설이 없습니다.{" "}
+                <Link
+                  href="/admin/amenities"
+                  className="text-blue-600 hover:text-blue-500"
+                >
+                  편의시설 관리 페이지
+                </Link>
+                에서 편의시설을 먼저 등록해주세요.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {allAmenities
+                  .filter(
+                    (amenity) =>
+                      !accommodationAmenities.some(
+                        (acc) => acc.id === amenity.id
+                      )
+                  )
+                  .map((amenity) => (
+                    <button
+                      key={amenity.id}
+                      onClick={() => handleAddAmenity(amenity.id)}
+                      className="flex items-center p-3 bg-gray-50 hover:bg-green-50 rounded-lg border border-gray-200 hover:border-green-300 transition-colors"
+                    >
+                      {amenity.iconUrl ? (
+                        <img
+                          src={amenity.iconUrl}
+                          alt={amenity.name}
+                          className="w-6 h-6 object-cover rounded mr-2"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 bg-gray-300 rounded mr-2 flex items-center justify-center">
+                          <svg
+                            className="w-4 h-4 text-gray-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                            />
+                          </svg>
+                        </div>
+                      )}
+                      <span className="text-sm font-medium text-gray-900">
+                        {amenity.name}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            )}
+            {allAmenities.filter(
+              (amenity) =>
+                !accommodationAmenities.some((acc) => acc.id === amenity.id)
+            ).length === 0 &&
+              allAmenities.length > 0 && (
+                <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
+                  모든 편의시설이 이미 연결되어 있습니다.
+                </div>
+              )}
           </div>
         </div>
 

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import { accommodationApi } from "@/lib/api";
-import { AccommodationRequest } from "@/types/accommodation";
+import { accommodationApi, amenityApi } from "@/lib/api";
+import { AccommodationRequest, AmenityResponse } from "@/types/accommodation";
 
 export default function NewAccommodationPage() {
   const { user, loading } = useAuth();
@@ -26,6 +26,30 @@ export default function NewAccommodationPage() {
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
+
+  // 편의시설 관련 상태
+  const [allAmenities, setAllAmenities] = useState<AmenityResponse[]>([]);
+  const [selectedAmenities, setSelectedAmenities] = useState<number[]>([]);
+  const [isAmenityLoading, setIsAmenityLoading] = useState(true);
+
+  // 편의시설 목록 조회 (Hook을 조건문보다 먼저 호출)
+  useEffect(() => {
+    const fetchAmenities = async () => {
+      try {
+        setIsAmenityLoading(true);
+        const response = await amenityApi.getAllAmenities();
+        setAllAmenities(response.data);
+      } catch (error) {
+        console.error("편의시설 목록 조회 실패:", error);
+      } finally {
+        setIsAmenityLoading(false);
+      }
+    };
+
+    if (user && user.role === "ADMIN") {
+      fetchAmenities();
+    }
+  }, [user]);
 
   if (loading) {
     return (
@@ -72,7 +96,19 @@ export default function NewAccommodationPage() {
       const response = await accommodationApi.createAccommodation(formData);
       const newAccommodationId = response.data.id;
 
-      // 2. 이미지가 있으면 업로드
+      // 2. 편의시설 연결
+      if (selectedAmenities.length > 0) {
+        try {
+          await amenityApi.connectAmenitiesToAccommodation(newAccommodationId, {
+            amenityIds: selectedAmenities,
+          });
+        } catch (amenityError) {
+          console.error("편의시설 연결 실패:", amenityError);
+          // 편의시설 연결 실패는 치명적이지 않으므로 계속 진행
+        }
+      }
+
+      // 3. 이미지가 있으면 업로드
       if (selectedFiles.length > 0) {
         setIsUploadingImages(true);
         try {
@@ -157,6 +193,15 @@ export default function NewAccommodationPage() {
 
     setSelectedFiles(newFiles);
     setPreviewUrls(newUrls);
+  };
+
+  // 편의시설 선택/해제
+  const toggleAmenity = (amenityId: number) => {
+    setSelectedAmenities((prev) =>
+      prev.includes(amenityId)
+        ? prev.filter((id) => id !== amenityId)
+        : [...prev, amenityId]
+    );
   };
 
   return (
@@ -312,6 +357,82 @@ export default function NewAccommodationPage() {
                   placeholder="예: 126.9780"
                 />
               </div>
+            </div>
+
+            {/* 편의시설 선택 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-4">
+                편의시설 (선택사항)
+              </label>
+              {isAmenityLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                  <span className="ml-2 text-sm text-gray-600">
+                    편의시설 목록 로딩 중...
+                  </span>
+                </div>
+              ) : allAmenities.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {allAmenities.map((amenity) => (
+                    <div key={amenity.id} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id={`amenity-${amenity.id}`}
+                        checked={selectedAmenities.includes(amenity.id)}
+                        onChange={() => toggleAmenity(amenity.id)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label
+                        htmlFor={`amenity-${amenity.id}`}
+                        className="ml-2 flex items-center cursor-pointer"
+                      >
+                        {amenity.iconUrl ? (
+                          <img
+                            src={amenity.iconUrl}
+                            alt={amenity.name}
+                            className="w-5 h-5 object-cover rounded mr-2"
+                          />
+                        ) : (
+                          <div className="w-5 h-5 bg-gray-200 rounded mr-2 flex items-center justify-center">
+                            <svg
+                              className="w-3 h-3 text-gray-500"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                          </div>
+                        )}
+                        <span className="text-sm text-gray-700">
+                          {amenity.name}
+                        </span>
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 py-4">
+                  등록된 편의시설이 없습니다.{" "}
+                  <Link
+                    href="/admin/amenities"
+                    className="text-blue-600 hover:text-blue-500"
+                  >
+                    편의시설 관리
+                  </Link>
+                  에서 먼저 편의시설을 등록해주세요.
+                </p>
+              )}
+              {selectedAmenities.length > 0 && (
+                <p className="text-sm text-gray-600 mt-2">
+                  {selectedAmenities.length}개의 편의시설이 선택되었습니다.
+                </p>
+              )}
             </div>
 
             {/* 이미지 업로드 */}
