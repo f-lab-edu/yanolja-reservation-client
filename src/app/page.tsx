@@ -1,11 +1,24 @@
 "use client";
 
 import { useAuth } from "@/contexts/AuthContext";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect } from "react";
+import Link from "next/link";
 
 export default function HomePage() {
   const { isAuthenticated, user, logout, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    // OAuth2 로그인 실패 처리
+    const error = searchParams.get("error");
+    if (error) {
+      console.error("OAuth2 로그인 실패:", error);
+      // 에러 파라미터 제거
+      router.replace("/");
+    }
+  }, [searchParams, router]);
 
   const handleLogin = () => {
     router.push("/login");
@@ -80,9 +93,12 @@ export default function HomePage() {
                 로그인이 성공적으로 완료되었습니다.
               </p>
               <div className="space-y-4">
-                <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-lg transition-colors duration-200">
+                <Link
+                  href="/accommodations"
+                  className="block w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-lg transition-colors duration-200 text-center"
+                >
                   숙소 둘러보기
-                </button>
+                </Link>
                 <button className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-4 rounded-lg transition-colors duration-200">
                   내 예약 확인
                 </button>

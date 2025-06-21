@@ -8,7 +8,7 @@ import React, {
   ReactNode,
 } from "react";
 import { AuthContextType, User, RegisterRequest } from "@/types/auth";
-import { authApi } from "@/lib/api";
+import { authApi, cookieUtils } from "@/lib/api";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -22,18 +22,49 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     // 앱 시작 시 토큰 확인
-    const token = localStorage.getItem("accessToken");
-    if (token) {
-      // TODO: 사용자 정보 가져오기 API 호출
-      // 임시로 로그인 상태로 설정
-      setUser({
-        id: 1,
-        email: "user@example.com",
-        name: "사용자",
-      });
-    }
-    setLoading(false);
+    checkAuthStatus();
   }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      // 먼저 localStorage에서 토큰 확인
+      let accessToken = localStorage.getItem("accessToken");
+      let refreshToken = localStorage.getItem("refreshToken");
+
+      // localStorage에 토큰이 없으면 쿠키에서 확인 (OAuth2 로그인 후)
+      if (!accessToken) {
+        const cookieAccessToken = cookieUtils.getCookie("access_token");
+        const cookieRefreshToken = cookieUtils.getCookie("refresh_token");
+
+        if (cookieAccessToken && cookieRefreshToken) {
+          // 쿠키에서 토큰을 localStorage로 이동
+          localStorage.setItem("accessToken", cookieAccessToken);
+          localStorage.setItem("refreshToken", cookieRefreshToken);
+
+          // 쿠키에서 토큰 삭제
+          cookieUtils.deleteCookie("access_token");
+          cookieUtils.deleteCookie("refresh_token");
+
+          accessToken = cookieAccessToken;
+          refreshToken = cookieRefreshToken;
+        }
+      }
+
+      if (accessToken) {
+        // TODO: 사용자 정보 가져오기 API 호출
+        // 임시로 로그인 상태로 설정
+        setUser({
+          id: 1,
+          email: "user@example.com",
+          name: "사용자",
+        });
+      }
+    } catch (error) {
+      console.error("인증 상태 확인 오류:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
@@ -95,6 +126,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // 로컬 상태 정리
       localStorage.removeItem("accessToken");
       localStorage.removeItem("refreshToken");
+
+      // 쿠키도 정리 (혹시 남아있을 수 있는 토큰들)
+      cookieUtils.deleteCookie("access_token");
+      cookieUtils.deleteCookie("refresh_token");
+
       setUser(null);
     }
   };
