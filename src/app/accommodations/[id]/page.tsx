@@ -335,20 +335,30 @@ export default function AccommodationDetailPage() {
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {accommodation.amenities.map((amenity) => (
                           <div key={amenity.id} className="flex items-center">
-                            <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                              <svg
-                                className="w-4 h-4 text-blue-600"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M5 13l4 4L19 7"
+                            <div className="w-6 h-6 mr-3 flex items-center justify-center">
+                              {amenity.iconUrl ? (
+                                <img
+                                  src={amenity.iconUrl}
+                                  alt={amenity.name}
+                                  className="w-6 h-6 object-cover rounded"
                                 />
-                              </svg>
+                              ) : (
+                                <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                                  <svg
+                                    className="w-4 h-4 text-blue-600"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M5 13l4 4L19 7"
+                                    />
+                                  </svg>
+                                </div>
+                              )}
                             </div>
                             <span className="text-gray-700">
                               {amenity.name}

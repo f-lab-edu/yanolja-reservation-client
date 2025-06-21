@@ -77,6 +77,26 @@ export interface Amenity {
   iconUrl?: string;
 }
 
+// 편의시설 관련 요청/응답 타입
+export interface AmenityRequest {
+  name: string;
+  iconUrl?: string;
+}
+
+export interface AmenityResponse {
+  id: number;
+  name: string;
+  iconUrl?: string;
+}
+
+export interface AmenityConnectionRequest {
+  amenityIds: number[];
+}
+
+export interface AmenityListResponse {
+  amenities: AmenityResponse[];
+}
+
 export interface AccommodationDetailResponse {
   id: number;
   name: string;

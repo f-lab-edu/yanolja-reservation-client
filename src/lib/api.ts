@@ -12,6 +12,9 @@ import {
   AccommodationResponse,
   AccommodationImageListResponse,
   AccommodationImageResponse,
+  AmenityRequest,
+  AmenityResponse,
+  AmenityConnectionRequest,
 } from "@/types/accommodation";
 import {
   UserInfoResponse,
@@ -239,6 +242,76 @@ export const accommodationApi = {
 
   deleteAccommodationImage: (imageId: number) =>
     apiClient.delete<void>(`/api/accommodations/images/${imageId}`),
+};
+
+// 편의시설 관련 API 함수들
+export const amenityApi = {
+  // 전체 편의시설 목록 조회 (백엔드에 /api/amenities 엔드포인트가 필요)
+  getAllAmenities: () => apiClient.get<AmenityResponse[]>("/api/amenities"),
+
+  // 편의시설 생성
+  createAmenity: (data: AmenityRequest) =>
+    apiClient.post<AmenityResponse>("/api/amenities", data),
+
+  // 편의시설 수정
+  updateAmenity: (id: number, data: AmenityRequest) =>
+    apiClient.put<AmenityResponse>(`/api/amenities/${id}`, data),
+
+  // 편의시설 삭제
+  deleteAmenity: (id: number) => apiClient.delete<void>(`/api/amenities/${id}`),
+
+  // 숙소의 편의시설 목록 조회
+  getAccommodationAmenities: (accommodationId: number) =>
+    apiClient.get<AmenityResponse[]>(
+      `/api/accommodations/${accommodationId}/amenities`
+    ),
+
+  // 숙소에 편의시설 연결
+  connectAmenitiesToAccommodation: (
+    accommodationId: number,
+    data: AmenityConnectionRequest
+  ) =>
+    apiClient.post<AmenityResponse[]>(
+      `/api/accommodations/${accommodationId}/amenities`,
+      data
+    ),
+
+  // 숙소에서 편의시설 연결 해제
+  removeAmenityFromAccommodation: (
+    accommodationId: number,
+    amenityId: number
+  ) =>
+    apiClient.delete<void>(
+      `/api/accommodations/${accommodationId}/amenities/${amenityId}`
+    ),
+
+  // 편의시설 아이콘 업로드
+  uploadAmenityIcon: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(`${API_BASE_URL}/api/amenities/icons`, {
+      method: "POST",
+      body: formData,
+      headers: {
+        Authorization: localStorage.getItem("token")
+          ? `Bearer ${localStorage.getItem("token")}`
+          : "",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "아이콘 업로드에 실패했습니다.");
+    }
+
+    const result = await response.json();
+    return {
+      data: result.data,
+      message: result.message,
+      success: result.success,
+    };
+  },
 };
 
 // 사용자 관련 API 함수들
