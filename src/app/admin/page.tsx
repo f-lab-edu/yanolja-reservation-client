@@ -92,6 +92,27 @@ export default function AdminDashboard() {
       color: "bg-purple-500",
     },
     {
+      title: "편의시설 관리",
+      description: "숙소 편의시설 등록 및 관리",
+      href: "/admin/amenities",
+      icon: (
+        <svg
+          className="w-8 h-8"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+          />
+        </svg>
+      ),
+      color: "bg-teal-500",
+    },
+    {
       title: "결제 관리",
       description: "결제 내역 및 환불 관리",
       href: "/admin/payments",
