@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { accommodationApi } from "@/lib/api";
+import { accommodationApi, getImageUrl } from "@/lib/api";
 import { AccommodationListResponse } from "@/types/accommodation";
 
 export default function AccommodationsPage() {
@@ -152,7 +152,7 @@ export default function AccommodationsPage() {
                   <div className="aspect-w-16 aspect-h-9 bg-gray-200">
                     {accommodation.mainImageUrl ? (
                       <img
-                        src={accommodation.mainImageUrl}
+                        src={getImageUrl(accommodation.mainImageUrl)}
                         alt={accommodation.name}
                         className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-200"
                       />
