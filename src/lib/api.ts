@@ -34,8 +34,30 @@ import {
   PortalRoom,
   RoomImage,
 } from "@/types/room";
+import {
+  PaymentRequest,
+  PaymentApproveRequest,
+  PaymentResponse,
+  PaymentListResponse,
+  CouponRequest,
+  CouponResponse,
+  UserCouponResponse,
+  CouponDiscountRequest,
+  CouponDiscountResponse,
+  CouponStatus,
+  CouponIssueType,
+  OrderRequest,
+  OrderResponse,
+} from "@/types/payment";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+// 인증 헤더 생성 함수
+const getAuthHeaders = (): Record<string, string> => {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 // 이미지 URL 변환 함수
 export const getImageUrl = (imageUrl: string): string => {
@@ -557,6 +579,437 @@ export const cookieUtils = {
     if (typeof document === "undefined") return;
 
     document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+  },
+};
+
+// 결제 API
+export const paymentApi = {
+  // 결제 처리
+  processPayment: async (data: PaymentRequest): Promise<PaymentResponse> => {
+    const response = await fetch(`${API_BASE_URL}/api/payments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = "결제 처리 중 오류가 발생했습니다.";
+
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } catch (e) {
+        console.error("Error parsing error response:", e);
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 결제 승인
+  approvePayment: async (
+    data: PaymentApproveRequest
+  ): Promise<PaymentResponse> => {
+    const response = await fetch(`${API_BASE_URL}/api/payments/approve`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      throw new Error("결제 승인 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 결제 상세 조회
+  getPayment: async (paymentKey: string): Promise<PaymentResponse> => {
+    const response = await fetch(`${API_BASE_URL}/api/payments/${paymentKey}`, {
+      method: "GET",
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error("결제 정보 조회 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 주문별 결제 조회
+  getPaymentByOrder: async (orderNumber: string): Promise<PaymentResponse> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/payments/order/${orderNumber}`,
+      {
+        method: "GET",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("주문 결제 정보 조회 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 사용자 결제 내역 조회
+  getUserPayments: async (
+    userId: number,
+    page: number = 0,
+    size: number = 20
+  ): Promise<{
+    content: PaymentListResponse[];
+    totalElements: number;
+    totalPages: number;
+  }> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/payments/user/${userId}?page=${page}&size=${size}`,
+      {
+        method: "GET",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("결제 내역 조회 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 결제 취소
+  cancelPayment: async (
+    paymentKey: string,
+    reason?: string
+  ): Promise<PaymentResponse> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/payments/${paymentKey}/cancel${
+        reason ? `?reason=${encodeURIComponent(reason)}` : ""
+      }`,
+      {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("결제 취소 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 결제 환불
+  refundPayment: async (
+    paymentKey: string,
+    refundAmount: number,
+    reason?: string
+  ): Promise<PaymentResponse> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/payments/${paymentKey}/refund?refundAmount=${refundAmount}${
+        reason ? `&reason=${encodeURIComponent(reason)}` : ""
+      }`,
+      {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("결제 환불 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+};
+
+// 쿠폰 API
+export const couponApi = {
+  // 쿠폰 생성 (관리자)
+  createCoupon: async (data: CouponRequest): Promise<CouponResponse> => {
+    const response = await fetch(`${API_BASE_URL}/api/v1/coupons`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      throw new Error("쿠폰 생성 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 쿠폰 목록 조회 (관리자)
+  getCoupons: async (
+    page: number = 0,
+    size: number = 20
+  ): Promise<{
+    content: CouponResponse[];
+    totalElements: number;
+    totalPages: number;
+  }> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/coupons?page=${page}&size=${size}`,
+      {
+        method: "GET",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("쿠폰 목록 조회 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 쿠폰 발급
+  issueCoupon: async (
+    couponCode: string,
+    userId: number
+  ): Promise<UserCouponResponse> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/coupons/${couponCode}/issue/${userId}`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("쿠폰 발급 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 자동 쿠폰 발급
+  issueAutomaticCoupons: async (
+    userId: number,
+    issueType: CouponIssueType
+  ): Promise<void> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/coupons/auto-issue/${userId}?issueType=${issueType}`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("자동 쿠폰 발급 중 오류가 발생했습니다.");
+    }
+  },
+
+  // 사용자 쿠폰 목록 조회
+  getUserCoupons: async (
+    userId: number,
+    page: number = 0,
+    size: number = 20
+  ): Promise<{
+    content: UserCouponResponse[];
+    totalElements: number;
+    totalPages: number;
+  }> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/portal/coupons/user/${userId}?page=${page}&size=${size}`,
+      {
+        method: "GET",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("사용자 쿠폰 조회 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 사용 가능한 쿠폰 조회
+  getUsableCoupons: async (
+    userId: number,
+    orderAmount: number
+  ): Promise<UserCouponResponse[]> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/portal/coupons/user/${userId}/usable?orderAmount=${orderAmount}`,
+      {
+        method: "GET",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("사용 가능한 쿠폰 조회 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 쿠폰 할인 금액 계산
+  calculateDiscount: async (
+    data: CouponDiscountRequest
+  ): Promise<CouponDiscountResponse> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/portal/coupons/discount/calculate`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(data),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("쿠폰 할인 계산 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 쿠폰 상태 변경 (관리자)
+  updateCouponStatus: async (
+    couponId: number,
+    status: CouponStatus
+  ): Promise<void> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/coupons/${couponId}/status?status=${status}`,
+      {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("쿠폰 상태 변경 중 오류가 발생했습니다.");
+    }
+  },
+};
+
+// 주문 API
+export const orderApi = {
+  // 주문 생성
+  createOrder: async (data: OrderRequest): Promise<OrderResponse> => {
+    const response = await fetch(`${API_BASE_URL}/api/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      throw new Error("주문 생성 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 주문 상세 조회
+  getOrder: async (orderNumber: string): Promise<OrderResponse> => {
+    const response = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}`, {
+      method: "GET",
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error("주문 정보 조회 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 사용자 주문 목록 조회
+  getUserOrders: async (
+    userId: number,
+    page: number = 0,
+    size: number = 20
+  ): Promise<{
+    content: OrderResponse[];
+    totalElements: number;
+    totalPages: number;
+  }> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/orders/user/${userId}?page=${page}&size=${size}`,
+      {
+        method: "GET",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("주문 목록 조회 중 오류가 발생했습니다.");
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  // 주문 확정
+  confirmOrder: async (orderNumber: string): Promise<void> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/orders/${orderNumber}/confirm`,
+      {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("주문 확정 중 오류가 발생했습니다.");
+    }
+  },
+
+  // 주문 취소
+  cancelOrder: async (orderNumber: string, reason?: string): Promise<void> => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/orders/${orderNumber}/cancel${
+        reason ? `?reason=${encodeURIComponent(reason)}` : ""
+      }`,
+      {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("주문 취소 중 오류가 발생했습니다.");
+    }
   },
 };
 
