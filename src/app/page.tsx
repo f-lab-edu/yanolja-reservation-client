@@ -119,9 +119,12 @@ export default function HomePage() {
                 >
                   내 프로필
                 </Link>
-                <button className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-4 rounded-lg transition-colors duration-200">
+                <Link
+                  href="/my-reservations"
+                  className="block w-full bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-4 rounded-lg transition-colors duration-200 text-center"
+                >
                   내 예약 확인
-                </button>
+                </Link>
                 {user?.role === "ADMIN" && (
                   <Link
                     href="/admin"
