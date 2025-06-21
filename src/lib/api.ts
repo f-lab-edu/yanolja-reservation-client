@@ -10,6 +10,8 @@ import {
   AccommodationDetailResponse,
   AccommodationRequest,
   AccommodationResponse,
+  AccommodationImageListResponse,
+  AccommodationImageResponse,
 } from "@/types/accommodation";
 import {
   UserInfoResponse,
@@ -18,6 +20,19 @@ import {
 } from "@/types/user";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+// 이미지 URL 변환 함수
+export const getImageUrl = (imageUrl: string): string => {
+  if (!imageUrl) return "";
+
+  // 이미 전체 URL인 경우 그대로 반환
+  if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+    return imageUrl;
+  }
+
+  // 상대 경로인 경우 API 베이스 URL과 결합
+  return `${API_BASE_URL}${imageUrl}`;
+};
 
 class ApiClient {
   private baseURL: string;
@@ -100,6 +115,53 @@ class ApiClient {
       method: "DELETE",
     });
   }
+
+  async uploadFiles<T>(
+    endpoint: string,
+    formData: FormData
+  ): Promise<ApiResponse<T>> {
+    const url = `${this.baseURL}${endpoint}`;
+
+    const token =
+      typeof window !== "undefined"
+        ? localStorage.getItem("accessToken")
+        : null;
+
+    const config: RequestInit = {
+      method: "POST",
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: formData,
+    };
+
+    try {
+      const response = await fetch(url, config);
+
+      let data;
+      try {
+        const text = await response.text();
+        data = text ? JSON.parse(text) : {};
+      } catch (jsonError) {
+        console.error("JSON 파싱 오류:", jsonError);
+        throw new Error("서버 응답 형식이 올바르지 않습니다.");
+      }
+
+      if (!response.ok || !data.success) {
+        const errorMessage =
+          data.message || `HTTP ${response.status}: ${response.statusText}`;
+        const error = new Error(errorMessage);
+        // @ts-ignore
+        error.code = data.code;
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error("파일 업로드 오류:", error);
+      throw error;
+    }
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);
@@ -145,6 +207,38 @@ export const accommodationApi = {
   // 관리자용 상세 조회
   getAccommodationForAdmin: (id: number) =>
     apiClient.get<AccommodationResponse>(`/api/accommodations/${id}`),
+
+  // 이미지 관련 API
+  getAccommodationImages: (accommodationId: number) =>
+    apiClient.get<AccommodationImageListResponse>(
+      `/api/accommodations/${accommodationId}/images`
+    ),
+
+  uploadAccommodationImages: (
+    accommodationId: number,
+    files: File[],
+    mainImageIndex?: number
+  ) => {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append("files", file);
+    });
+    if (mainImageIndex !== undefined) {
+      formData.append("mainImageIndex", mainImageIndex.toString());
+    }
+    return apiClient.uploadFiles<AccommodationImageResponse[]>(
+      `/api/accommodations/${accommodationId}/images`,
+      formData
+    );
+  },
+
+  setMainImage: (imageId: number) =>
+    apiClient.put<AccommodationImageResponse>(
+      `/api/accommodations/images/${imageId}/main`
+    ),
+
+  deleteAccommodationImage: (imageId: number) =>
+    apiClient.delete<void>(`/api/accommodations/images/${imageId}`),
 };
 
 // 사용자 관련 API 함수들

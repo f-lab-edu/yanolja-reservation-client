@@ -21,6 +21,12 @@ export default function NewAccommodationPage() {
     pricePerNight: 0,
   });
 
+  // 이미지 관련 상태
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -62,8 +68,31 @@ export default function NewAccommodationPage() {
 
     setIsSubmitting(true);
     try {
-      await accommodationApi.createAccommodation(formData);
-      alert("숙소가 성공적으로 등록되었습니다.");
+      // 1. 숙소 등록
+      const response = await accommodationApi.createAccommodation(formData);
+      const newAccommodationId = response.data.id;
+
+      // 2. 이미지가 있으면 업로드
+      if (selectedFiles.length > 0) {
+        setIsUploadingImages(true);
+        try {
+          await accommodationApi.uploadAccommodationImages(
+            newAccommodationId,
+            selectedFiles
+          );
+          alert("숙소와 이미지가 성공적으로 등록되었습니다.");
+        } catch (imageError) {
+          console.error("이미지 업로드 실패:", imageError);
+          alert(
+            "숙소는 등록되었지만 이미지 업로드에 실패했습니다. 나중에 수정 페이지에서 이미지를 추가해주세요."
+          );
+        } finally {
+          setIsUploadingImages(false);
+        }
+      } else {
+        alert("숙소가 성공적으로 등록되었습니다.");
+      }
+
       router.push("/admin/accommodations");
     } catch (error) {
       console.error("숙소 등록 실패:", error);
@@ -86,6 +115,48 @@ export default function NewAccommodationPage() {
     if (errors[name]) {
       setErrors((prev) => ({ ...prev, [name]: "" }));
     }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // 파일 크기 검증 (10MB)
+    const maxSize = 10 * 1024 * 1024;
+    const invalidFiles = files.filter((file) => file.size > maxSize);
+    if (invalidFiles.length > 0) {
+      alert("파일 크기는 10MB 이하여야 합니다.");
+      return;
+    }
+
+    // 이미지 파일 형식 검증
+    const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif"];
+    const invalidTypes = files.filter(
+      (file) => !validTypes.includes(file.type)
+    );
+    if (invalidTypes.length > 0) {
+      alert("JPG, PNG, GIF 형식의 이미지만 업로드 가능합니다.");
+      return;
+    }
+
+    setSelectedFiles(files);
+
+    // 미리보기 URL 생성
+    const urls = files.map((file) => URL.createObjectURL(file));
+    // 기존 URL 해제
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    setPreviewUrls(urls);
+  };
+
+  const removeImage = (index: number) => {
+    const newFiles = selectedFiles.filter((_, i) => i !== index);
+    const newUrls = previewUrls.filter((_, i) => i !== index);
+
+    // 제거되는 URL 해제
+    URL.revokeObjectURL(previewUrls[index]);
+
+    setSelectedFiles(newFiles);
+    setPreviewUrls(newUrls);
   };
 
   return (
@@ -243,6 +314,85 @@ export default function NewAccommodationPage() {
               </div>
             </div>
 
+            {/* 이미지 업로드 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                숙소 이미지 (선택사항)
+              </label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  id="image-upload"
+                />
+                <label
+                  htmlFor="image-upload"
+                  className="cursor-pointer flex flex-col items-center justify-center"
+                >
+                  <svg
+                    className="w-12 h-12 text-gray-400 mb-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                    />
+                  </svg>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium text-blue-600 hover:text-blue-500">
+                      클릭하여 이미지 선택
+                    </span>{" "}
+                    또는 드래그 앤 드롭
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    최대 10MB, JPG/PNG/GIF 형식
+                  </p>
+                </label>
+              </div>
+
+              {/* 선택된 이미지 미리보기 */}
+              {previewUrls.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">
+                    선택된 이미지 ({previewUrls.length}개)
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {previewUrls.map((url, index) => (
+                      <div key={index} className="relative">
+                        <img
+                          src={url}
+                          alt={`미리보기 ${index + 1}`}
+                          className="w-full h-24 object-cover rounded-lg"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeImage(index)}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
+                        >
+                          ×
+                        </button>
+                        {index === 0 && (
+                          <div className="absolute bottom-1 left-1 bg-blue-600 text-white text-xs px-1 py-0.5 rounded">
+                            대표
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    첫 번째 이미지가 대표 이미지로 설정됩니다.
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* 버튼 */}
             <div className="flex justify-end space-x-4 pt-6">
               <Link
@@ -253,14 +403,18 @@ export default function NewAccommodationPage() {
               </Link>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isUploadingImages}
                 className={`px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-                  isSubmitting
+                  isSubmitting || isUploadingImages
                     ? "bg-gray-400 cursor-not-allowed"
                     : "bg-blue-600 hover:bg-blue-700"
                 }`}
               >
-                {isSubmitting ? "등록 중..." : "숙소 등록"}
+                {isSubmitting
+                  ? "숙소 등록 중..."
+                  : isUploadingImages
+                  ? "이미지 업로드 중..."
+                  : "숙소 등록"}
               </button>
             </div>
           </form>

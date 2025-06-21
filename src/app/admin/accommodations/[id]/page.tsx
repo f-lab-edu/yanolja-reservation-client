@@ -4,10 +4,11 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import { accommodationApi } from "@/lib/api";
+import { accommodationApi, getImageUrl } from "@/lib/api";
 import {
   AccommodationRequest,
   AccommodationResponse,
+  AccommodationImageResponse,
 } from "@/types/accommodation";
 
 export default function EditAccommodationPage() {
@@ -28,6 +29,13 @@ export default function EditAccommodationPage() {
     pricePerNight: 0,
   });
 
+  // 이미지 관련 상태
+  const [images, setImages] = useState<AccommodationImageResponse[]>([]);
+  const [isImageLoading, setIsImageLoading] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
   const accommodationId = Number(params.id);
 
   useEffect(() => {
@@ -39,6 +47,7 @@ export default function EditAccommodationPage() {
   useEffect(() => {
     if (accommodationId && user && user.role === "ADMIN") {
       fetchAccommodation();
+      fetchImages();
     }
   }, [accommodationId, user]);
 
@@ -64,6 +73,117 @@ export default function EditAccommodationPage() {
       router.push("/admin/accommodations");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchImages = async () => {
+    try {
+      setIsImageLoading(true);
+      const response = await accommodationApi.getAccommodationImages(
+        accommodationId
+      );
+      setImages(response.data.images);
+    } catch (error) {
+      console.error("이미지 조회 실패:", error);
+    } finally {
+      setIsImageLoading(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // 파일 크기 검증 (10MB)
+    const maxSize = 10 * 1024 * 1024;
+    const invalidFiles = files.filter((file) => file.size > maxSize);
+    if (invalidFiles.length > 0) {
+      alert("파일 크기는 10MB 이하여야 합니다.");
+      return;
+    }
+
+    // 이미지 파일 형식 검증
+    const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif"];
+    const invalidTypes = files.filter(
+      (file) => !validTypes.includes(file.type)
+    );
+    if (invalidTypes.length > 0) {
+      alert("JPG, PNG, GIF 형식의 이미지만 업로드 가능합니다.");
+      return;
+    }
+
+    setSelectedFiles(files);
+
+    // 미리보기 URL 생성
+    const urls = files.map((file) => URL.createObjectURL(file));
+    // 기존 URL 해제
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    setPreviewUrls(urls);
+  };
+
+  const handleImageUpload = async () => {
+    if (selectedFiles.length === 0) {
+      alert("업로드할 이미지를 선택해주세요.");
+      return;
+    }
+
+    try {
+      setIsImageLoading(true);
+      setUploadProgress(0);
+
+      // 업로드 진행률 시뮬레이션
+      const progressInterval = setInterval(() => {
+        setUploadProgress((prev) => Math.min(prev + 10, 90));
+      }, 200);
+
+      await accommodationApi.uploadAccommodationImages(
+        accommodationId,
+        selectedFiles
+      );
+
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+
+      // 이미지 목록 새로고침
+      await fetchImages();
+
+      // 선택된 파일과 미리보기 초기화
+      setSelectedFiles([]);
+      previewUrls.forEach((url) => URL.revokeObjectURL(url));
+      setPreviewUrls([]);
+      setUploadProgress(0);
+
+      alert("이미지가 성공적으로 업로드되었습니다.");
+    } catch (error) {
+      console.error("이미지 업로드 실패:", error);
+      alert("이미지 업로드에 실패했습니다.");
+      setUploadProgress(0);
+    } finally {
+      setIsImageLoading(false);
+    }
+  };
+
+  const handleSetMainImage = async (imageId: number) => {
+    try {
+      await accommodationApi.setMainImage(imageId);
+      await fetchImages();
+      alert("대표 이미지가 설정되었습니다.");
+    } catch (error) {
+      console.error("대표 이미지 설정 실패:", error);
+      alert("대표 이미지 설정에 실패했습니다.");
+    }
+  };
+
+  const handleDeleteImage = async (imageId: number) => {
+    if (!confirm("이미지를 삭제하시겠습니까?")) return;
+
+    try {
+      await accommodationApi.deleteAccommodationImage(imageId);
+      await fetchImages();
+      alert("이미지가 삭제되었습니다.");
+    } catch (error) {
+      console.error("이미지 삭제 실패:", error);
+      alert("이미지 삭제에 실패했습니다.");
     }
   };
 
@@ -222,6 +342,183 @@ export default function EditAccommodationPage() {
                 {accommodation.rooms?.length || 0}개
               </span>
             </div>
+          </div>
+        </div>
+
+        {/* 이미지 관리 섹션 */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            이미지 관리
+          </h2>
+
+          {/* 이미지 업로드 */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-md font-medium text-gray-700">
+                이미지 업로드
+              </h3>
+              <div className="text-sm text-gray-500">
+                최대 10MB, JPG/PNG/GIF 형식
+              </div>
+            </div>
+
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handleFileSelect}
+                className="hidden"
+                id="image-upload"
+              />
+              <label
+                htmlFor="image-upload"
+                className="cursor-pointer flex flex-col items-center justify-center"
+              >
+                <svg
+                  className="w-12 h-12 text-gray-400 mb-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  />
+                </svg>
+                <div className="text-center">
+                  <p className="text-sm text-gray-600">
+                    클릭하여 이미지를 선택하거나 드래그하여 업로드
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    여러 파일을 동시에 선택할 수 있습니다
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* 선택된 파일 미리보기 */}
+            {selectedFiles.length > 0 && (
+              <div className="mt-4">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">
+                  선택된 파일 ({selectedFiles.length}개)
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {previewUrls.map((url, index) => (
+                    <div key={index} className="relative">
+                      <img
+                        src={url}
+                        alt={`미리보기 ${index + 1}`}
+                        className="w-full h-24 object-cover rounded-lg"
+                      />
+                      <div className="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-xs px-1 rounded">
+                        {(selectedFiles[index].size / 1024 / 1024).toFixed(1)}MB
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-between items-center mt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedFiles([]);
+                      previewUrls.forEach((url) => URL.revokeObjectURL(url));
+                      setPreviewUrls([]);
+                    }}
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    선택 취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleImageUpload}
+                    disabled={isImageLoading}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                      isImageLoading
+                        ? "bg-gray-400 cursor-not-allowed text-white"
+                        : "bg-blue-600 hover:bg-blue-700 text-white"
+                    }`}
+                  >
+                    {isImageLoading ? "업로드 중..." : "업로드"}
+                  </button>
+                </div>
+
+                {/* 업로드 진행률 */}
+                {uploadProgress > 0 && uploadProgress < 100 && (
+                  <div className="mt-2">
+                    <div className="bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${uploadProgress}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {uploadProgress}% 완료
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 기존 이미지 목록 */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-md font-medium text-gray-700">
+                등록된 이미지 ({images.length}개)
+              </h3>
+              {isImageLoading && (
+                <div className="text-sm text-gray-500">로딩 중...</div>
+              )}
+            </div>
+
+            {images.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                등록된 이미지가 없습니다.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {images.map((image) => (
+                  <div key={image.id} className="relative group">
+                    <img
+                      src={getImageUrl(image.imageUrl)}
+                      alt="숙소 이미지"
+                      className="w-full h-48 object-cover rounded-lg"
+                    />
+
+                    {/* 대표 이미지 표시 */}
+                    {image.isMain && (
+                      <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded">
+                        대표 이미지
+                      </div>
+                    )}
+
+                    {/* 액션 버튼들 */}
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                      <div className="flex space-x-2">
+                        {!image.isMain && (
+                          <button
+                            onClick={() => handleSetMainImage(image.id)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm"
+                          >
+                            대표 설정
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeleteImage(image.id)}
+                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

@@ -45,6 +45,7 @@ export interface AccommodationResponse {
   rating?: number;
   reviewCount?: number;
   status?: "ACTIVE" | "INACTIVE" | "SUSPENDED";
+  mainImageUrl?: string;
   images: AccommodationImage[];
   amenities: Amenity[];
   rooms: any[];
@@ -55,6 +56,19 @@ export interface AccommodationImage {
   accommodationId: number;
   imageUrl: string;
   isMain: boolean;
+}
+
+// 이미지 업로드 응답 타입
+export interface AccommodationImageResponse {
+  id: number;
+  accommodationId: number;
+  imageUrl: string;
+  isMain: boolean;
+}
+
+// 이미지 목록 응답 타입
+export interface AccommodationImageListResponse {
+  images: AccommodationImageResponse[];
 }
 
 export interface Amenity {
