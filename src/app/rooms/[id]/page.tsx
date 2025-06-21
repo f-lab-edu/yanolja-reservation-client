@@ -1,17 +1,30 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { roomApi, getImageUrl } from "@/lib/api";
+import { roomApi, getImageUrl, reservationApi } from "@/lib/api";
 import { PortalRoom } from "@/types/room";
+import { ReservationRequest } from "@/types/reservation";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function RoomDetailPage() {
   const params = useParams();
+  const router = useRouter();
+  const { isAuthenticated, user } = useAuth();
   const [room, setRoom] = useState<PortalRoom | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [isBooking, setIsBooking] = useState(false);
+
+  // 예약 폼 데이터
+  const [checkInDate, setCheckInDate] = useState("");
+  const [checkOutDate, setCheckOutDate] = useState("");
+  const [guests, setGuests] = useState(1);
+  const [selectedOptions, setSelectedOptions] = useState<{
+    [key: number]: number;
+  }>({});
 
   const roomId = Number(params.id);
 

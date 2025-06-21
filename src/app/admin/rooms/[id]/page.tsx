@@ -20,6 +20,8 @@ export default function EditRoomPage() {
   const [availableOptions, setAvailableOptions] = useState<RoomOption[]>([]);
   const [room, setRoom] = useState<RoomResponse | null>(null);
   const [images, setImages] = useState<RoomImage[]>([]);
+  const [newImageFiles, setNewImageFiles] = useState<File[]>([]);
+  const [newImagePreviewUrls, setNewImagePreviewUrls] = useState<string[]>([]);
   const [formData, setFormData] = useState<RoomRequest>({
     accommodationId: 0,
     name: "",
@@ -37,6 +39,13 @@ export default function EditRoomPage() {
       fetchRoomOptions();
     }
   }, [roomId]);
+
+  // 컴포넌트 언마운트 시 미리보기 URL 정리
+  useEffect(() => {
+    return () => {
+      newImagePreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [newImagePreviewUrls]);
 
   const fetchRoomData = async () => {
     try {
@@ -153,15 +162,34 @@ export default function EditRoomPage() {
     }));
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
+    setNewImageFiles(files);
+
+    // 기존 미리보기 URL 정리
+    newImagePreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+
+    // 새 미리보기 URL 생성
+    const previewUrls = files.map((file) => URL.createObjectURL(file));
+    setNewImagePreviewUrls(previewUrls);
+  };
+
+  const handleImageUpload = async () => {
+    if (newImageFiles.length === 0) return;
+
     try {
-      await roomApi.uploadRoomImages(roomId, files);
+      await roomApi.uploadRoomImages(roomId, newImageFiles);
       // 이미지 목록 새로고침
       const imagesResponse = await roomApi.getRoomImages(roomId);
       setImages(imagesResponse.data.images);
+
+      // 선택된 파일들과 미리보기 정리
+      setNewImageFiles([]);
+      newImagePreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+      setNewImagePreviewUrls([]);
+
       alert("이미지가 성공적으로 업로드되었습니다.");
     } catch (err) {
       console.error("이미지 업로드 실패:", err);
@@ -240,69 +268,6 @@ export default function EditRoomPage() {
         </div>
 
         <div className="space-y-6">
-          {/* 객실 이미지 관리 */}
-          <div className="bg-white shadow rounded-lg p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-6">
-              객실 이미지
-            </h2>
-
-            {/* 이미지 업로드 */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                새 이미지 업로드
-              </label>
-              <input
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-            </div>
-
-            {/* 현재 이미지 목록 */}
-            {images.length > 0 ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {images.map((image) => (
-                  <div key={image.id} className="relative">
-                    <img
-                      src={getImageUrl(image.imageUrl)}
-                      alt="객실 이미지"
-                      className="w-full h-32 object-cover rounded-lg"
-                    />
-                    {image.isMain && (
-                      <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded">
-                        대표
-                      </div>
-                    )}
-                    <div className="absolute top-2 right-2 flex space-x-1">
-                      {!image.isMain && (
-                        <button
-                          onClick={() => handleSetMainImage(image.id)}
-                          className="bg-white text-gray-600 p-1 rounded text-xs hover:bg-gray-100"
-                          title="대표 이미지로 설정"
-                        >
-                          ⭐
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDeleteImage(image.id)}
-                        className="bg-white text-red-600 p-1 rounded text-xs hover:bg-gray-100"
-                        title="삭제"
-                      >
-                        ❌
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                등록된 이미지가 없습니다.
-              </div>
-            )}
-          </div>
-
           {/* 객실 정보 수정 폼 */}
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="bg-white shadow rounded-lg p-6">
@@ -495,6 +460,137 @@ export default function EditRoomPage() {
               </button>
             </div>
           </form>
+
+          {/* 객실 이미지 관리 */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <h2 className="text-lg font-medium text-gray-900 mb-6">
+              객실 이미지
+            </h2>
+
+            {/* 이미지 업로드 */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                새 이미지 업로드
+              </label>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+
+              {/* 새 이미지 미리보기 */}
+              {newImagePreviewUrls.length > 0 && (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-medium text-gray-700">
+                      선택된 이미지 미리보기
+                    </h3>
+                    <div className="flex space-x-2">
+                      <button
+                        type="button"
+                        onClick={handleImageUpload}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm"
+                      >
+                        업로드
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewImageFiles([]);
+                          newImagePreviewUrls.forEach((url) =>
+                            URL.revokeObjectURL(url)
+                          );
+                          setNewImagePreviewUrls([]);
+                        }}
+                        className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm"
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+                    {newImagePreviewUrls.map((url, index) => (
+                      <div key={index} className="relative group">
+                        <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                          <img
+                            src={url}
+                            alt={`새 이미지 미리보기 ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        {index === 0 && (
+                          <div className="absolute top-2 left-2 bg-green-600 text-white text-xs px-2 py-1 rounded">
+                            첫번째
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newFiles = newImageFiles.filter(
+                              (_, i) => i !== index
+                            );
+                            const newUrls = newImagePreviewUrls.filter(
+                              (_, i) => i !== index
+                            );
+                            setNewImageFiles(newFiles);
+                            setNewImagePreviewUrls(newUrls);
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 현재 이미지 목록 */}
+            {images.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {images.map((image) => (
+                  <div key={image.id} className="relative">
+                    <img
+                      src={getImageUrl(image.imageUrl)}
+                      alt="객실 이미지"
+                      className="w-full h-32 object-cover rounded-lg"
+                    />
+                    {image.isMain && (
+                      <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded">
+                        대표
+                      </div>
+                    )}
+                    <div className="absolute top-2 right-2 flex space-x-1">
+                      {!image.isMain && (
+                        <button
+                          onClick={() => handleSetMainImage(image.id)}
+                          className="bg-white text-gray-600 p-1 rounded text-xs hover:bg-gray-100"
+                          title="대표 이미지로 설정"
+                        >
+                          ⭐
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteImage(image.id)}
+                        className="bg-white text-red-600 p-1 rounded text-xs hover:bg-gray-100"
+                        title="삭제"
+                      >
+                        ❌
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                등록된 이미지가 없습니다.
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
