@@ -21,6 +21,19 @@ import {
   UserUpdateRequest,
   UserSearchCondition,
 } from "@/types/user";
+import {
+  Room,
+  RoomListItem,
+  RoomRequest,
+  RoomResponse,
+  RoomOption,
+  RoomOptionRequest,
+  RoomOptionResponse,
+  RoomSearchRequest,
+  RoomListResponse,
+  PortalRoom,
+  RoomImage,
+} from "@/types/room";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -312,6 +325,102 @@ export const amenityApi = {
       success: result.success,
     };
   },
+};
+
+// 객실 관련 API 함수들
+export const roomApi = {
+  // 관리자용 객실 API
+  getAllRooms: () => apiClient.get<RoomListItem[]>("/api/rooms"),
+
+  getRoomById: (id: number) => apiClient.get<RoomResponse>(`/api/rooms/${id}`),
+
+  createRoom: (data: RoomRequest) =>
+    apiClient.post<RoomResponse>("/api/rooms", data),
+
+  updateRoom: (id: number, data: RoomRequest) =>
+    apiClient.put<RoomResponse>(`/api/rooms/${id}`, data),
+
+  deleteRoom: (id: number) => apiClient.delete<void>(`/api/rooms/${id}`),
+
+  getRoomsByAccommodation: (accommodationId: number) =>
+    apiClient.get<RoomListItem[]>(
+      `/api/rooms/accommodation/${accommodationId}`
+    ),
+
+  // 객실 이미지 관련 API
+  getRoomImages: (roomId: number) =>
+    apiClient.get<{ images: RoomImage[] }>(`/api/rooms/${roomId}/images`),
+
+  uploadRoomImages: (
+    roomId: number,
+    files: File[],
+    mainImageIndex?: number
+  ) => {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append("files", file);
+    });
+    if (mainImageIndex !== undefined) {
+      formData.append("mainImageIndex", mainImageIndex.toString());
+    }
+    return apiClient.uploadFiles<RoomImage[]>(
+      `/api/rooms/${roomId}/images`,
+      formData
+    );
+  },
+
+  setRoomMainImage: (imageId: number) =>
+    apiClient.put<RoomImage>(`/api/rooms/images/${imageId}/main`),
+
+  deleteRoomImage: (imageId: number) =>
+    apiClient.delete<void>(`/api/rooms/images/${imageId}`),
+
+  // 객실 옵션 관리 API
+  getRoomOptions: (roomId: number) =>
+    apiClient.get<RoomOption[]>(`/api/rooms/${roomId}/options`),
+
+  addRoomOptions: (roomId: number, optionIds: number[]) =>
+    apiClient.post<void>(`/api/rooms/${roomId}/options`, optionIds),
+
+  removeRoomOption: (roomId: number, optionId: number) =>
+    apiClient.delete<void>(`/api/rooms/${roomId}/options/${optionId}`),
+
+  removeAllRoomOptions: (roomId: number) =>
+    apiClient.delete<void>(`/api/rooms/${roomId}/options`),
+
+  // 포털용 객실 API
+  searchRooms: (searchRequest: RoomSearchRequest) =>
+    apiClient.post<RoomListResponse>("/api/portal/rooms/search", searchRequest),
+
+  getPortalRoomDetail: (id: number) =>
+    apiClient.get<PortalRoom>(`/api/portal/rooms/${id}`),
+
+  getPortalRoomsByAccommodation: (accommodationId: number) =>
+    apiClient.get<PortalRoom[]>(
+      `/api/portal/rooms/accommodation/${accommodationId}`
+    ),
+};
+
+// 객실 옵션 관리 API 함수들
+export const roomOptionApi = {
+  getAllRoomOptions: () =>
+    apiClient.get<RoomOption[]>("/api/admin/room-options"),
+
+  getRoomOptionById: (id: number) =>
+    apiClient.get<RoomOptionResponse>(`/api/admin/room-options/${id}`),
+
+  createRoomOption: (data: RoomOptionRequest) =>
+    apiClient.post<RoomOptionResponse>("/api/admin/room-options", data),
+
+  updateRoomOption: (id: number, data: RoomOptionRequest) =>
+    apiClient.put<RoomOptionResponse>(`/api/admin/room-options/${id}`, data),
+
+  deleteRoomOption: (id: number) =>
+    apiClient.delete<void>(`/api/admin/room-options/${id}`),
+
+  // 포털용 옵션 조회
+  getPortalRoomOptions: () =>
+    apiClient.get<RoomOption[]>("/api/portal/room-options"),
 };
 
 // 사용자 관련 API 함수들

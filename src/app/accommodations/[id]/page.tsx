@@ -3,13 +3,15 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { accommodationApi, getImageUrl } from "@/lib/api";
+import { accommodationApi, roomApi, getImageUrl } from "@/lib/api";
 import { AccommodationDetailResponse } from "@/types/accommodation";
+import { PortalRoom } from "@/types/room";
 
 export default function AccommodationDetailPage() {
   const params = useParams();
   const [accommodation, setAccommodation] =
     useState<AccommodationDetailResponse | null>(null);
+  const [rooms, setRooms] = useState<PortalRoom[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -25,10 +27,12 @@ export default function AccommodationDetailPage() {
   const fetchAccommodation = async () => {
     try {
       setIsLoading(true);
-      const response = await accommodationApi.getAccommodationById(
-        accommodationId
-      );
-      setAccommodation(response.data);
+      const [accommodationResponse, roomsResponse] = await Promise.all([
+        accommodationApi.getAccommodationById(accommodationId),
+        roomApi.getPortalRoomsByAccommodation(accommodationId),
+      ]);
+      setAccommodation(accommodationResponse.data);
+      setRooms(roomsResponse.data);
     } catch (error) {
       console.error("숙소 상세 정보 조회 실패:", error);
       setError("숙소 정보를 불러오는데 실패했습니다.");
@@ -368,6 +372,145 @@ export default function AccommodationDetailPage() {
                       </div>
                     </div>
                   )}
+
+                {/* 객실 목록 */}
+                {rooms.length > 0 && (
+                  <div className="mb-6">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                      객실 선택
+                    </h2>
+                    <div className="space-y-4">
+                      {rooms.map((room) => (
+                        <div
+                          key={room.id}
+                          className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors"
+                        >
+                          <div className="flex flex-col md:flex-row gap-4">
+                            {/* 객실 이미지 */}
+                            <div className="md:w-48 flex-shrink-0">
+                              {room.mainImageUrl ? (
+                                <img
+                                  src={getImageUrl(room.mainImageUrl)}
+                                  alt={room.name}
+                                  className="w-full h-32 object-cover rounded-lg"
+                                />
+                              ) : (
+                                <div className="w-full h-32 bg-gray-200 rounded-lg flex items-center justify-center">
+                                  <svg
+                                    className="w-8 h-8 text-gray-400"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                    />
+                                  </svg>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* 객실 정보 */}
+                            <div className="flex-grow">
+                              <div className="flex justify-between items-start mb-2">
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                  {room.name}
+                                </h3>
+                                <div className="text-right">
+                                  <div className="text-xl font-bold text-gray-900">
+                                    ₩{room.pricePerNight.toLocaleString()}
+                                  </div>
+                                  <div className="text-sm text-gray-600">
+                                    / 박
+                                  </div>
+                                </div>
+                              </div>
+
+                              <p className="text-gray-600 text-sm mb-3 line-clamp-2">
+                                {room.description}
+                              </p>
+
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-4 text-sm text-gray-500">
+                                  <div className="flex items-center">
+                                    <svg
+                                      className="w-4 h-4 mr-1"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                                      />
+                                    </svg>
+                                    최대 {room.capacity}명
+                                  </div>
+                                  <div className="flex items-center">
+                                    <span
+                                      className={`inline-block w-2 h-2 rounded-full mr-1 ${
+                                        room.status === "AVAILABLE"
+                                          ? "bg-green-400"
+                                          : "bg-red-400"
+                                      }`}
+                                    ></span>
+                                    {room.status === "AVAILABLE"
+                                      ? "예약 가능"
+                                      : "예약 불가"}
+                                  </div>
+                                </div>
+
+                                <div className="flex space-x-2">
+                                  <Link
+                                    href={`/rooms/${room.id}`}
+                                    className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                                  >
+                                    상세보기
+                                  </Link>
+                                  {room.status === "AVAILABLE" && (
+                                    <button className="px-4 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                                      예약하기
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 객실 옵션 (있는 경우) */}
+                              {room.options && room.options.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-gray-100">
+                                  <div className="text-xs text-gray-500 mb-1">
+                                    추가 옵션:
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {room.options.slice(0, 3).map((option) => (
+                                      <span
+                                        key={option.id}
+                                        className="inline-block px-2 py-1 bg-gray-100 text-xs text-gray-600 rounded"
+                                      >
+                                        {option.name} (+₩
+                                        {option.price.toLocaleString()})
+                                      </span>
+                                    ))}
+                                    {room.options.length > 3 && (
+                                      <span className="inline-block px-2 py-1 bg-gray-100 text-xs text-gray-600 rounded">
+                                        +{room.options.length - 3}개 더
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 오른쪽: 예약 카드 */}
@@ -377,14 +520,33 @@ export default function AccommodationDetailPage() {
                     <div className="text-3xl font-bold text-gray-900">
                       ₩{accommodation.pricePerNight.toLocaleString()}
                     </div>
-                    <div className="text-gray-600">/ 박</div>
+                    <div className="text-gray-600">/ 박 부터</div>
                   </div>
 
-                  <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium transition-colors duration-200 mb-4">
-                    예약하기
-                  </button>
+                  {rooms.length > 0 ? (
+                    <div className="space-y-3">
+                      <div className="text-sm text-gray-600 text-center">
+                        {rooms.length}개 객실 이용 가능
+                      </div>
+                      <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium transition-colors duration-200">
+                        객실 선택하기
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <div className="text-gray-500 text-sm mb-3">
+                        현재 예약 가능한 객실이 없습니다
+                      </div>
+                      <button
+                        disabled
+                        className="w-full bg-gray-300 text-gray-500 py-3 px-4 rounded-lg font-medium cursor-not-allowed"
+                      >
+                        예약 불가
+                      </button>
+                    </div>
+                  )}
 
-                  <div className="text-center text-sm text-gray-500">
+                  <div className="text-center text-xs text-gray-500 mt-4">
                     예약 확정 전까지는 요금이 청구되지 않습니다.
                   </div>
                 </div>
