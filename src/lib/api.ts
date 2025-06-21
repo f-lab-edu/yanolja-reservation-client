@@ -12,6 +12,8 @@ import {
   AccommodationResponse,
   AccommodationImageListResponse,
   AccommodationImageResponse,
+  AccommodationSearchRequest,
+  PageResponse,
   AmenityRequest,
   AmenityResponse,
   AmenityConnectionRequest,
@@ -233,11 +235,17 @@ export const authApi = {
 
 // 숙소 관련 API 함수들
 export const accommodationApi = {
-  getAllAccommodations: () =>
-    apiClient.get<AccommodationListResponse[]>("/api/accommodations"),
+  // 포털용 - 인증 불필요 (일반 사용자용)
+  searchAccommodations: (searchRequest: AccommodationSearchRequest) =>
+    apiClient.post<PageResponse<AccommodationListResponse>>(
+      "/api/portal/accommodations/search",
+      searchRequest
+    ),
 
   getAccommodationById: (id: number) =>
-    apiClient.get<AccommodationDetailResponse>(`/api/accommodations/${id}`),
+    apiClient.get<AccommodationDetailResponse>(
+      `/api/portal/accommodations/${id}`
+    ),
 
   // 관리자용 CRUD 함수들
   createAccommodation: (data: AccommodationRequest) =>

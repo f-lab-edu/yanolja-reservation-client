@@ -112,3 +112,34 @@ export interface AccommodationDetailResponse {
   amenities: Amenity[];
   rooms: any[]; // 나중에 Room 타입 정의 시 변경
 }
+
+// 포털용 숙소 검색 요청 타입
+export interface AccommodationSearchRequest {
+  condition?: AccommodationSearchCondition;
+  pageRequest?: PageRequestDto;
+}
+
+export interface AccommodationSearchCondition {
+  keyword?: string;
+  minPrice?: number;
+  maxPrice?: number;
+}
+
+export interface PageRequestDto {
+  page?: number;
+  size?: number;
+  sortColumn?: string;
+  sortDirection?: "asc" | "desc";
+}
+
+// 페이지 응답 타입
+export interface PageResponse<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  size: number;
+  number: number;
+  first: boolean;
+  last: boolean;
+  numberOfElements: number;
+}
