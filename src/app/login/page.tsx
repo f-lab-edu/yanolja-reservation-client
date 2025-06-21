@@ -33,14 +33,20 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const success = await login(email, password);
-      if (success) {
-        router.push("/");
+      await login(email, password);
+      // 로그인 성공 시 메인 페이지로 이동
+      router.push("/");
+    } catch (err: any) {
+      console.error("로그인 에러:", err);
+
+      // 에러 코드에 따른 메시지 구분
+      if (err.code === "A004") {
+        setError("탈퇴한 회원입니다.");
+      } else if (err.message) {
+        setError(err.message);
       } else {
-        setError("이메일 또는 비밀번호가 올바르지 않습니다.");
+        setError("서버와의 연결에 실패했습니다.");
       }
-    } catch (err) {
-      setError("서버와의 연결에 실패했습니다.");
     }
   };
 

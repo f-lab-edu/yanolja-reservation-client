@@ -43,4 +43,5 @@ export interface User {
   name: string;
   nickname?: string;
   profileImage?: string;
+  role?: "USER" | "ADMIN";
 }
