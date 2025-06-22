@@ -177,6 +177,11 @@ export default function MyReservationsPage() {
   const canCancel = (reservation: ReservationListResponse) => {
     if (!reservation.canCancel) return false;
 
+    // 결제가 완료된 예약은 취소 불가 (결제 취소를 해야 함)
+    if (reservation.paymentStatus === "COMPLETED") {
+      return false;
+    }
+
     // 체크인 3일 전까지만 취소 가능
     const checkInDate = new Date(reservation.checkInDate);
     const now = new Date();
@@ -424,6 +429,22 @@ export default function MyReservationsPage() {
                               </button>
                             </div>
                           )}
+
+                          {!canCancel(reservation) &&
+                            reservation.paymentStatus === "COMPLETED" &&
+                            (reservation.status === ReservationStatus.PENDING ||
+                              reservation.status ===
+                                ReservationStatus.CONFIRMED) && (
+                              <div className="text-right">
+                                <div className="text-xs text-red-600 mb-1">
+                                  결제 완료된 예약은 취소할 수 없습니다.
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  결제 취소는 마이페이지 &gt; 결제내역에서
+                                  가능합니다.
+                                </div>
+                              </div>
+                            )}
 
                           <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                             상세 보기
