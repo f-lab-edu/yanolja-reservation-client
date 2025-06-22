@@ -998,4 +998,153 @@ export const orderApi = {
   },
 };
 
+// 리뷰 API
+export const reviewApi = {
+  // 리뷰 작성 (이미지 포함)
+  createReviewWithImages: async (
+    accommodationId: number,
+    reservationId: number,
+    rating: number,
+    comment: string,
+    images?: File[]
+  ): Promise<any> => {
+    const formData = new FormData();
+    formData.append("accommodationId", accommodationId.toString());
+    formData.append("reservationId", reservationId.toString());
+    formData.append("rating", rating.toString());
+    formData.append("comment", comment);
+
+    if (images && images.length > 0) {
+      images.forEach((image) => {
+        formData.append("images", image);
+      });
+    }
+
+    const response = await apiClient.uploadFiles<any>(
+      "/api/portal/reviews",
+      formData
+    );
+    return response.data;
+  },
+
+  // 리뷰 작성 (JSON)
+  createReview: async (data: any): Promise<any> => {
+    const response = await apiClient.post<any>("/api/portal/reviews", data);
+    return response.data;
+  },
+
+  // 리뷰 수정
+  updateReview: async (reviewId: number, data: any): Promise<any> => {
+    const response = await apiClient.put<any>(
+      `/api/portal/reviews/${reviewId}`,
+      data
+    );
+    return response.data;
+  },
+
+  // 리뷰 삭제
+  deleteReview: async (reviewId: number): Promise<void> => {
+    await apiClient.delete(`/api/portal/reviews/${reviewId}`);
+  },
+
+  // 리뷰 상세 조회
+  getReview: async (reviewId: number): Promise<any> => {
+    const response = await apiClient.get<any>(
+      `/api/portal/reviews/${reviewId}`
+    );
+    return response.data;
+  },
+
+  // 내 리뷰 목록
+  getMyReviews: async (page: number = 0, size: number = 10): Promise<any> => {
+    const response = await apiClient.get<any>(
+      `/api/portal/reviews/my?page=${page}&size=${size}`
+    );
+    return response.data;
+  },
+
+  // 숙소 리뷰 목록
+  getAccommodationReviews: async (
+    accommodationId: number,
+    minRating?: number,
+    page: number = 0,
+    size: number = 10
+  ): Promise<any> => {
+    let url = `/api/portal/reviews/accommodations/${accommodationId}?page=${page}&size=${size}`;
+    if (minRating) {
+      url += `&minRating=${minRating}`;
+    }
+    const response = await apiClient.get<any>(url);
+    return response.data;
+  },
+
+  // 숙소 리뷰 통계
+  getAccommodationReviewStatistics: async (
+    accommodationId: number
+  ): Promise<any> => {
+    const response = await apiClient.get<any>(
+      `/api/portal/reviews/accommodations/${accommodationId}/statistics`
+    );
+    return response.data;
+  },
+
+  // 숙소 최신 리뷰
+  getAccommodationRecentReviews: async (
+    accommodationId: number,
+    limit: number = 3
+  ): Promise<any[]> => {
+    const response = await apiClient.get<any[]>(
+      `/api/portal/reviews/accommodations/${accommodationId}/recent?limit=${limit}`
+    );
+    return response.data;
+  },
+
+  // 리뷰 작성 가능 여부 확인
+  canWriteReview: async (reservationId: number): Promise<boolean> => {
+    const response = await apiClient.get<boolean>(
+      `/api/portal/reviews/reservations/${reservationId}/can-review`
+    );
+    return response.data;
+  },
+
+  // 리뷰 검색
+  searchReviews: async (searchData: any): Promise<any> => {
+    const response = await apiClient.post<any>(
+      "/api/portal/reviews/search",
+      searchData
+    );
+    return response.data;
+  },
+
+  // 리뷰 이미지 업로드
+  uploadReviewImages: async (
+    reviewId: number,
+    images: File[]
+  ): Promise<any> => {
+    const formData = new FormData();
+    images.forEach((image) => {
+      formData.append("files", image);
+    });
+
+    const response = await apiClient.uploadFiles<any>(
+      `/api/reviews/${reviewId}/images`,
+      formData
+    );
+    return response.data;
+  },
+
+  // 리뷰 이미지 목록 조회
+  getReviewImages: async (reviewId: number): Promise<any> => {
+    const response = await apiClient.get<any>(
+      `/api/reviews/${reviewId}/images`
+    );
+    return response.data;
+  },
+
+  // 리뷰 이미지 삭제
+  deleteReviewImage: async (imageId: number): Promise<void> => {
+    await apiClient.delete(`/api/reviews/images/${imageId}`);
+  },
+};
+
 export default apiClient;
