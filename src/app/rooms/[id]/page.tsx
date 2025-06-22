@@ -3,10 +3,29 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { roomApi, getImageUrl, reservationApi } from "@/lib/api";
+import {
+  roomApi,
+  getImageUrl,
+  reservationApi,
+  couponApi,
+  orderApi,
+  paymentApi,
+} from "@/lib/api";
 import { PortalRoom } from "@/types/room";
 import { ReservationRequest } from "@/types/reservation";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  UserCouponResponse,
+  UserCouponStatus,
+  DiscountType,
+  OrderRequest,
+  PaymentRequest,
+  PaymentMethod,
+} from "@/types/payment";
+import {
+  requestTossPaymentByMethod,
+  TossPaymentRequest,
+} from "@/lib/toss-payments";
 
 export default function RoomDetailPage() {
   const params = useParams();
@@ -29,6 +48,19 @@ export default function RoomDetailPage() {
   // 예약 처리 상태
   const [totalPrice, setTotalPrice] = useState(0);
   const [nights, setNights] = useState(0);
+
+  // 쿠폰 및 결제 관련 상태
+  const [availableCoupons, setAvailableCoupons] = useState<
+    UserCouponResponse[]
+  >([]);
+  const [selectedCoupon, setSelectedCoupon] =
+    useState<UserCouponResponse | null>(null);
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [finalAmount, setFinalAmount] = useState(0);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] =
+    useState<PaymentMethod>(PaymentMethod.CARD);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   const roomId = Number(params.id);
 
@@ -76,12 +108,73 @@ export default function RoomDetailPage() {
     setTotalPrice(total);
   };
 
+  // 사용 가능한 쿠폰 로딩
+  const loadAvailableCoupons = async () => {
+    if (!user || totalPrice <= 0) return;
+
+    try {
+      const coupons = await couponApi.getUsableCoupons(user.id, totalPrice);
+      setAvailableCoupons(coupons);
+    } catch (error) {
+      console.error("쿠폰 로딩 실패:", error);
+    }
+  };
+
+  // 쿠폰 할인 금액 계산
+  const calculateDiscount = async (coupon: UserCouponResponse | null) => {
+    if (!coupon || totalPrice <= 0) {
+      setDiscountAmount(0);
+      setFinalAmount(totalPrice);
+      return;
+    }
+
+    try {
+      const response = await couponApi.calculateDiscount({
+        couponId: coupon.coupon.id,
+        orderAmount: totalPrice,
+      });
+
+      setDiscountAmount(response.discountAmount);
+      setFinalAmount(totalPrice - response.discountAmount);
+    } catch (error: any) {
+      console.error("할인 계산 실패:", error);
+      setDiscountAmount(0);
+      setFinalAmount(totalPrice);
+
+      // 쿠폰 사용 불가 메시지 표시
+      let errorMessage = "쿠폰 할인 금액을 계산할 수 없습니다.";
+      if (error.message) {
+        if (
+          error.message.includes("쿠폰") ||
+          error.message.includes("coupon")
+        ) {
+          errorMessage = `이 쿠폰은 현재 사용할 수 없습니다.\n사유: ${error.message}`;
+        }
+      }
+
+      alert(errorMessage);
+      setSelectedCoupon(null); // 사용할 수 없는 쿠폰은 선택 해제
+    }
+  };
+
   // 날짜나 옵션 변경 시 가격 재계산
   useEffect(() => {
     calculateTotalPrice();
   }, [checkInDate, checkOutDate, selectedOptions, room]);
 
-  // 예약 처리
+  // 총 가격 변경 시 쿠폰 로딩
+  useEffect(() => {
+    if (totalPrice > 0) {
+      loadAvailableCoupons();
+    }
+  }, [totalPrice, user]);
+
+  // 쿠폰 선택 시 할인 계산
+  useEffect(() => {
+    calculateDiscount(selectedCoupon);
+  }, [selectedCoupon, totalPrice]);
+
+  // 예약 처리 (결제 모달 열기)
   const handleReservation = async () => {
     if (!isAuthenticated) {
       if (confirm("로그인이 필요합니다. 로그인 페이지로 이동하시겠습니까?")) {
@@ -97,7 +190,7 @@ export default function RoomDetailPage() {
 
     // 오늘 날짜와 비교하여 과거 날짜 검증
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // 시간을 00:00:00으로 설정
+    today.setHours(0, 0, 0, 0);
     const checkIn = new Date(checkInDate);
     const checkOut = new Date(checkOutDate);
 
@@ -111,9 +204,28 @@ export default function RoomDetailPage() {
       return;
     }
 
-    try {
-      setIsBooking(true);
+    // 결제 모달 열기
+    setShowPaymentModal(true);
+  };
 
+  // 실제 예약 및 결제 처리
+  const processReservationAndPayment = async () => {
+    if (!user) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+
+    // 토큰 확인
+    const token = localStorage.getItem("accessToken");
+    if (!token) {
+      alert("인증 토큰이 없습니다. 다시 로그인해주세요.");
+      return;
+    }
+
+    try {
+      setIsProcessingPayment(true);
+
+      // 1. 예약 생성
       const reservationData: ReservationRequest = {
         roomId: roomId,
         checkInDate,
@@ -128,15 +240,148 @@ export default function RoomDetailPage() {
           .filter((opt) => opt.quantity > 0),
       };
 
-      const response = await reservationApi.createReservation(reservationData);
+      console.log("예약 생성 요청:", reservationData);
+      const reservationResponse = await reservationApi.createReservation(
+        reservationData
+      );
+      console.log("예약 생성 응답:", reservationResponse);
 
-      alert("예약이 성공적으로 완료되었습니다!");
-      router.push("/my-reservations");
+      // 예약 응답 검증
+      if (
+        !reservationResponse ||
+        !reservationResponse.data ||
+        !reservationResponse.data.id
+      ) {
+        console.error("예약 응답이 유효하지 않습니다:", reservationResponse);
+        throw new Error("예약 생성에 실패했습니다. 다시 시도해주세요.");
+      }
+
+      // 2. 주문 생성
+      let orderResponse;
+      let finalOrderAmount = finalAmount;
+
+      // 쿠폰이 선택된 경우 먼저 쿠폰과 함께 시도
+      if (selectedCoupon) {
+        try {
+          const orderDataWithCoupon: OrderRequest = {
+            userId: user.id,
+            reservationId: reservationResponse.data.id,
+            originalAmount: totalPrice,
+            couponIds: [selectedCoupon.coupon.id],
+            pointsUsed: 0,
+          };
+
+          console.log("쿠폰 포함 주문 생성 요청:", orderDataWithCoupon);
+          orderResponse = await orderApi.createOrder(orderDataWithCoupon);
+          console.log("쿠폰 포함 주문 생성 성공:", orderResponse);
+        } catch (couponError: any) {
+          console.log("쿠폰 사용 실패, 쿠폰 없이 재시도:", couponError.message);
+
+          // 쿠폰 관련 오류인 경우 쿠폰 없이 재시도
+          if (couponError.message.includes("쿠폰")) {
+            const shouldRetryWithoutCoupon = confirm(
+              `선택한 쿠폰을 사용할 수 없습니다.\n쿠폰 없이 주문을 진행하시겠습니까?\n\n오류: ${couponError.message}`
+            );
+
+            if (!shouldRetryWithoutCoupon) {
+              throw new Error("주문이 취소되었습니다.");
+            }
+
+            // 쿠폰 없이 다시 시도
+            const orderDataWithoutCoupon: OrderRequest = {
+              userId: user.id,
+              reservationId: reservationResponse.data.id,
+              originalAmount: totalPrice,
+              couponIds: [],
+              pointsUsed: 0,
+            };
+
+            console.log("쿠폰 없는 주문 생성 요청:", orderDataWithoutCoupon);
+            orderResponse = await orderApi.createOrder(orderDataWithoutCoupon);
+            finalOrderAmount = totalPrice; // 쿠폰 할인 없이 원래 가격으로 설정
+            console.log("쿠폰 없는 주문 생성 성공:", orderResponse);
+          } else {
+            throw couponError;
+          }
+        }
+      } else {
+        // 처음부터 쿠폰이 선택되지 않은 경우
+        const orderData: OrderRequest = {
+          userId: user.id,
+          reservationId: reservationResponse.data.id,
+          originalAmount: totalPrice,
+          couponIds: [],
+          pointsUsed: 0,
+        };
+
+        console.log("주문 생성 요청:", orderData);
+        orderResponse = await orderApi.createOrder(orderData);
+        console.log("주문 생성 응답:", orderResponse);
+      }
+
+      // 주문 응답 검증
+      if (!orderResponse || !orderResponse.orderNumber) {
+        console.error("주문 응답이 유효하지 않습니다:", orderResponse);
+        throw new Error("주문 생성에 실패했습니다. 다시 시도해주세요.");
+      }
+
+      // 3. 토스 페이먼츠 결제 처리
+      console.log("토스 페이먼츠 결제 시작...");
+
+      // 토스 페이먼츠로 결제 요청
+      const tossPaymentData: TossPaymentRequest = {
+        orderId: orderResponse.orderNumber,
+        amount: finalOrderAmount,
+        orderName: `${room.name} ${nights}박 숙박`,
+        customerName: user.name,
+        customerEmail: user.email,
+        customerMobilePhone: user.phone,
+        successUrl: `${window.location.origin}/payment/success`,
+        failUrl: `${window.location.origin}/payment/fail`,
+      };
+
+      console.log("토스 페이먼츠 요청 데이터:", tossPaymentData);
+
+      // 결제 수단에 따라 토스 페이먼츠 호출
+      if (selectedPaymentMethod === PaymentMethod.CARD) {
+        await requestTossPaymentByMethod("CARD", tossPaymentData);
+      } else if (selectedPaymentMethod === PaymentMethod.BANK_TRANSFER) {
+        await requestTossPaymentByMethod("BANK_TRANSFER", tossPaymentData);
+      } else if (selectedPaymentMethod === PaymentMethod.VIRTUAL_ACCOUNT) {
+        await requestTossPaymentByMethod("VIRTUAL_ACCOUNT", tossPaymentData);
+      } else if (selectedPaymentMethod === PaymentMethod.TOSS) {
+        await requestTossPaymentByMethod("TOSS", tossPaymentData);
+      } else {
+        throw new Error("지원하지 않는 결제 수단입니다.");
+      }
+
+      // 토스 페이먼츠가 리다이렉트를 처리하므로 여기서는 실행되지 않음
     } catch (error: any) {
-      console.error("예약 실패:", error);
-      alert(error.message || "예약에 실패했습니다. 다시 시도해주세요.");
+      console.error("예약/결제 실패:", error);
+
+      let errorMessage = "예약/결제에 실패했습니다. 다시 시도해주세요.";
+
+      if (error.message) {
+        if (
+          error.message.includes("userDetail") ||
+          error.message.includes("인증")
+        ) {
+          errorMessage = "로그인이 만료되었습니다. 다시 로그인해주세요.";
+        } else if (error.message.includes("주문 생성")) {
+          errorMessage = "주문 생성에 실패했습니다. 다시 시도해주세요.";
+        } else if (error.message.includes("예약 생성")) {
+          errorMessage = "예약 생성에 실패했습니다. 다시 시도해주세요.";
+        } else if (error.message.includes("결제")) {
+          errorMessage = "결제 처리에 실패했습니다. 다시 시도해주세요.";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+
+      alert(errorMessage);
     } finally {
-      setIsBooking(false);
+      setIsProcessingPayment(false);
+      setShowPaymentModal(false);
     }
   };
 
@@ -514,6 +759,45 @@ export default function RoomDetailPage() {
                         </div>
                       </div>
 
+                      {/* 쿠폰 선택 */}
+                      {checkInDate &&
+                        checkOutDate &&
+                        nights > 0 &&
+                        availableCoupons.length > 0 && (
+                          <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              쿠폰 선택
+                            </label>
+                            <select
+                              value={selectedCoupon?.id || ""}
+                              onChange={(e) => {
+                                const couponId = e.target.value;
+                                const coupon = couponId
+                                  ? availableCoupons.find(
+                                      (c) => c.id === Number(couponId)
+                                    )
+                                  : null;
+                                setSelectedCoupon(coupon || null);
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            >
+                              <option value="">쿠폰을 선택하세요</option>
+                              {availableCoupons.map((userCoupon) => (
+                                <option
+                                  key={userCoupon.id}
+                                  value={userCoupon.id}
+                                >
+                                  {userCoupon.coupon.name} -{" "}
+                                  {userCoupon.coupon.discountType ===
+                                  DiscountType.FIXED
+                                    ? `₩${userCoupon.coupon.discountValue.toLocaleString()}`
+                                    : `${userCoupon.coupon.discountValue}%`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
                       {/* 가격 계산 */}
                       {checkInDate && checkOutDate && nights > 0 && (
                         <div className="mb-6 p-4 bg-white rounded-lg border">
@@ -563,9 +847,22 @@ export default function RoomDetailPage() {
                                 </>
                               )}
                             <hr />
-                            <div className="flex justify-between font-semibold">
-                              <span>총 금액</span>
+                            <div className="flex justify-between">
+                              <span>소계</span>
                               <span>₩{totalPrice.toLocaleString()}</span>
+                            </div>
+                            {selectedCoupon && discountAmount > 0 && (
+                              <div className="flex justify-between text-red-600">
+                                <span>쿠폰 할인</span>
+                                <span>-₩{discountAmount.toLocaleString()}</span>
+                              </div>
+                            )}
+                            <hr />
+                            <div className="flex justify-between font-semibold text-lg">
+                              <span>총 결제 금액</span>
+                              <span>
+                                ₩{(finalAmount || totalPrice).toLocaleString()}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -573,15 +870,10 @@ export default function RoomDetailPage() {
 
                       <button
                         onClick={handleReservation}
-                        disabled={
-                          isBooking ||
-                          !checkInDate ||
-                          !checkOutDate ||
-                          nights <= 0
-                        }
+                        disabled={!checkInDate || !checkOutDate || nights <= 0}
                         className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium transition-colors duration-200 mb-4 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {isBooking ? "예약 처리 중..." : "예약하기"}
+                        예약 및 결제하기
                       </button>
                     </>
                   ) : (
@@ -607,6 +899,181 @@ export default function RoomDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* 결제 모달 */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold text-gray-900">결제 정보</h2>
+                <button
+                  onClick={() => setShowPaymentModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-4">
+              {/* 예약 정보 요약 */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-2">예약 정보</h3>
+                <div className="space-y-1 text-sm text-gray-600">
+                  <div>객실: {room?.name}</div>
+                  <div>
+                    체크인: {new Date(checkInDate).toLocaleDateString("ko-KR")}
+                  </div>
+                  <div>
+                    체크아웃:{" "}
+                    {new Date(checkOutDate).toLocaleDateString("ko-KR")}
+                  </div>
+                  <div>숙박일: {nights}박</div>
+                  <div>인원: {guests}명</div>
+                </div>
+              </div>
+
+              {/* 결제 금액 */}
+              <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+                <h3 className="font-semibold text-gray-900 mb-2">결제 금액</h3>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>객실 요금</span>
+                    <span>₩{totalPrice.toLocaleString()}</span>
+                  </div>
+                  {selectedCoupon && discountAmount > 0 && (
+                    <div className="flex justify-between text-red-600">
+                      <span>쿠폰 할인 ({selectedCoupon.coupon.name})</span>
+                      <span>-₩{discountAmount.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <hr className="my-2" />
+                  <div className="flex justify-between font-semibold text-lg">
+                    <span>총 결제 금액</span>
+                    <span>₩{(finalAmount || totalPrice).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 결제 수단 선택 */}
+              <div className="mb-6">
+                <h3 className="font-semibold text-gray-900 mb-3">결제 수단</h3>
+                <div className="space-y-2">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value={PaymentMethod.CARD}
+                      checked={selectedPaymentMethod === PaymentMethod.CARD}
+                      onChange={(e) =>
+                        setSelectedPaymentMethod(
+                          e.target.value as PaymentMethod
+                        )
+                      }
+                      className="mr-3"
+                    />
+                    <span>신용카드</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value={PaymentMethod.BANK_TRANSFER}
+                      checked={
+                        selectedPaymentMethod === PaymentMethod.BANK_TRANSFER
+                      }
+                      onChange={(e) =>
+                        setSelectedPaymentMethod(
+                          e.target.value as PaymentMethod
+                        )
+                      }
+                      className="mr-3"
+                    />
+                    <span>계좌이체</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value={PaymentMethod.VIRTUAL_ACCOUNT}
+                      checked={
+                        selectedPaymentMethod === PaymentMethod.VIRTUAL_ACCOUNT
+                      }
+                      onChange={(e) =>
+                        setSelectedPaymentMethod(
+                          e.target.value as PaymentMethod
+                        )
+                      }
+                      className="mr-3"
+                    />
+                    <span>무통장입금</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value={PaymentMethod.TOSS}
+                      checked={selectedPaymentMethod === PaymentMethod.TOSS}
+                      onChange={(e) =>
+                        setSelectedPaymentMethod(
+                          e.target.value as PaymentMethod
+                        )
+                      }
+                      className="mr-3"
+                    />
+                    <span>토스</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* 결제 약관 */}
+              <div className="mb-6 p-3 bg-gray-50 rounded text-xs text-gray-600">
+                <p>• 결제 완료 후 예약이 확정됩니다.</p>
+                <p>• 취소/환불 정책에 따라 수수료가 발생할 수 있습니다.</p>
+                <p>
+                  • 체크인 3일 전까지 100% 환불, 1-2일 전 50% 환불, 당일 환불
+                  불가
+                </p>
+              </div>
+
+              {/* 결제 버튼 */}
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowPaymentModal(false)}
+                  className="flex-1 px-4 py-3 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 font-medium"
+                  disabled={isProcessingPayment}
+                >
+                  취소
+                </button>
+                <button
+                  onClick={processReservationAndPayment}
+                  disabled={isProcessingPayment}
+                  className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isProcessingPayment
+                    ? "결제 중..."
+                    : `₩${(
+                        finalAmount || totalPrice
+                      ).toLocaleString()} 결제하기`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
