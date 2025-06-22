@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   accommodationApi,
@@ -22,6 +22,7 @@ import { useAuth } from "@/contexts/AuthContext";
 export default function AccommodationDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const [accommodation, setAccommodation] =
     useState<AccommodationDetailResponse | null>(null);
@@ -64,6 +65,31 @@ export default function AccommodationDetailPage() {
       checkCanWriteReview();
     }
   }, [user, accommodationId]);
+
+  // URL 파라미터 확인해서 리뷰 작성 폼 자동 열기
+  useEffect(() => {
+    const writeReview = searchParams.get("writeReview");
+    const reservationId = searchParams.get("reservationId");
+
+    if (writeReview === "true" && reservationId && user && accommodationId) {
+      // 잠시 후 리뷰 작성 폼 열기 (데이터 로딩 완료 후)
+      const timer = setTimeout(() => {
+        setReviewForm({
+          accommodationId: accommodationId,
+          reservationId: Number(reservationId),
+          rating: 5,
+          comment: "",
+          imageUrls: [],
+        });
+        setReviewImages([]);
+        setShowReviewForm(true);
+        setCanWriteReview(true);
+        setAvailableReservationId(Number(reservationId));
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [searchParams, user, accommodationId]);
 
   const fetchAccommodation = async () => {
     try {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { reservationApi, getImageUrl } from "@/lib/api";
+import { reservationApi, reviewApi, getImageUrl } from "@/lib/api";
 import {
   ReservationListResponse,
   ReservationStatus,
@@ -193,6 +193,26 @@ export default function MyReservationsPage() {
       (reservation.status === ReservationStatus.PENDING ||
         reservation.status === ReservationStatus.CONFIRMED)
     );
+  };
+
+  // 리뷰 작성 페이지로 이동
+  const handleWriteReview = async (reservation: ReservationListResponse) => {
+    try {
+      // 리뷰 작성 가능 여부 확인
+      const canWrite = await reviewApi.canWriteReview(reservation.id);
+      if (!canWrite) {
+        alert("이미 리뷰를 작성했거나 리뷰 작성이 불가능한 예약입니다.");
+        return;
+      }
+
+      // 숙소 상세 페이지로 이동하여 리뷰 작성
+      router.push(
+        `/accommodations/${reservation.accommodationId}?writeReview=true&reservationId=${reservation.id}`
+      );
+    } catch (error) {
+      console.error("리뷰 작성 가능 여부 확인 실패:", error);
+      alert("리뷰 작성이 불가능합니다.");
+    }
   };
 
   // 환불 정책 계산
@@ -452,7 +472,10 @@ export default function MyReservationsPage() {
 
                           {reservation.status ===
                             ReservationStatus.COMPLETED && (
-                            <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                            <button
+                              onClick={() => handleWriteReview(reservation)}
+                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                            >
                               리뷰 작성
                             </button>
                           )}
