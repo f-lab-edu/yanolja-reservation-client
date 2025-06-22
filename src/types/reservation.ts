@@ -36,6 +36,7 @@ export interface ReservationResponse {
 export interface ReservationListResponse {
   id: number;
   roomId: number;
+  accommodationId: number;
   roomName: string;
   accommodationName: string;
   accommodationImage?: string;
