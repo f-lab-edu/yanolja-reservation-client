@@ -1,20 +1,55 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { accommodationApi, roomApi, getImageUrl } from "@/lib/api";
+import {
+  accommodationApi,
+  roomApi,
+  reviewApi,
+  reservationApi,
+  getImageUrl,
+} from "@/lib/api";
 import { AccommodationDetailResponse } from "@/types/accommodation";
 import { PortalRoom } from "@/types/room";
+import {
+  ReviewListResponse,
+  ReviewStatisticsResponse,
+  ReviewCreateRequest,
+} from "@/types/review";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function AccommodationDetailPage() {
   const params = useParams();
+  const router = useRouter();
+  const { user } = useAuth();
   const [accommodation, setAccommodation] =
     useState<AccommodationDetailResponse | null>(null);
   const [rooms, setRooms] = useState<PortalRoom[]>([]);
+  const [reviews, setReviews] = useState<ReviewListResponse[]>([]);
+  const [reviewStats, setReviewStats] =
+    useState<ReviewStatisticsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [reviewPage, setReviewPage] = useState(0);
+  const [hasMoreReviews, setHasMoreReviews] = useState(true);
+
+  // 리뷰 작성 관련 상태
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [canWriteReview, setCanWriteReview] = useState(false);
+  const [availableReservationId, setAvailableReservationId] = useState<
+    number | null
+  >(null);
+  const [reviewForm, setReviewForm] = useState<ReviewCreateRequest>({
+    accommodationId: 0,
+    reservationId: 0,
+    rating: 5,
+    comment: "",
+    imageUrls: [],
+  });
+  const [reviewImages, setReviewImages] = useState<File[]>([]);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const accommodationId = Number(params.id);
 
@@ -23,6 +58,12 @@ export default function AccommodationDetailPage() {
       fetchAccommodation();
     }
   }, [accommodationId]);
+
+  useEffect(() => {
+    if (user && accommodationId) {
+      checkCanWriteReview();
+    }
+  }, [user, accommodationId]);
 
   const fetchAccommodation = async () => {
     try {
@@ -33,12 +74,225 @@ export default function AccommodationDetailPage() {
       ]);
       setAccommodation(accommodationResponse.data);
       setRooms(roomsResponse.data);
+
+      // 리뷰 정보 로드
+      await loadReviews();
     } catch (error) {
       console.error("숙소 상세 정보 조회 실패:", error);
       setError("숙소 정보를 불러오는데 실패했습니다.");
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const loadReviews = async () => {
+    try {
+      const [reviewsResponse, statsResponse] = await Promise.all([
+        reviewApi.getAccommodationReviews(accommodationId, undefined, 0, 5),
+        reviewApi.getAccommodationReviewStatistics(accommodationId),
+      ]);
+      setReviews(reviewsResponse.content || []);
+      setReviewStats(statsResponse);
+      setHasMoreReviews(reviewsResponse.content.length === 5);
+    } catch (error) {
+      console.error("리뷰 정보 조회 실패:", error);
+      // 리뷰 로드 실패해도 페이지는 표시
+    }
+  };
+
+  const loadMoreReviews = async () => {
+    try {
+      const nextPage = reviewPage + 1;
+      const response = await reviewApi.getAccommodationReviews(
+        accommodationId,
+        undefined,
+        nextPage,
+        5
+      );
+      setReviews((prev) => [...prev, ...(response.content || [])]);
+      setReviewPage(nextPage);
+      setHasMoreReviews(response.content.length === 5);
+    } catch (error) {
+      console.error("추가 리뷰 로드 실패:", error);
+    }
+  };
+
+  // 리뷰 작성 가능 여부 확인
+  const checkCanWriteReview = async () => {
+    if (!user) {
+      setCanWriteReview(false);
+      return;
+    }
+
+    try {
+      // 사용자의 예약 목록에서 해당 숙소의 완료된 예약을 찾음
+      const reservationsResponse = await reservationApi.getUserReservations(
+        "COMPLETED",
+        0,
+        100
+      );
+      const accommodationReservations =
+        reservationsResponse.data.content.filter(
+          (reservation: any) => reservation.accommodationId === accommodationId
+        );
+
+      if (accommodationReservations.length === 0) {
+        setCanWriteReview(false);
+        return;
+      }
+
+      // 각 예약에 대해 리뷰 작성 가능 여부 확인
+      for (const reservation of accommodationReservations) {
+        try {
+          const canReview = await reviewApi.canWriteReview(reservation.id);
+          if (canReview) {
+            setCanWriteReview(true);
+            setAvailableReservationId(reservation.id);
+            return;
+          }
+        } catch (error) {
+          console.error(
+            `예약 ${reservation.id} 리뷰 작성 가능 여부 확인 실패:`,
+            error
+          );
+        }
+      }
+
+      setCanWriteReview(false);
+    } catch (error) {
+      console.error("리뷰 작성 가능 여부 확인 실패:", error);
+      setCanWriteReview(false);
+    }
+  };
+
+  // 리뷰 작성 폼 열기
+  const openReviewForm = () => {
+    if (!user) {
+      alert("로그인이 필요합니다.");
+      router.push("/login");
+      return;
+    }
+
+    if (!canWriteReview || !availableReservationId) {
+      alert(
+        "리뷰를 작성할 수 없습니다. 숙박 완료된 예약이 있는지 확인해주세요."
+      );
+      return;
+    }
+
+    setReviewForm({
+      accommodationId: accommodationId,
+      reservationId: availableReservationId,
+      rating: 5,
+      comment: "",
+      imageUrls: [],
+    });
+    setReviewImages([]);
+    setShowReviewForm(true);
+  };
+
+  // 리뷰 작성 폼 닫기
+  const closeReviewForm = () => {
+    setShowReviewForm(false);
+    setReviewForm({
+      accommodationId: 0,
+      reservationId: 0,
+      rating: 5,
+      comment: "",
+      imageUrls: [],
+    });
+    setReviewImages([]);
+  };
+
+  // 리뷰 제출
+  const submitReview = async () => {
+    // 리뷰 내용 유효성 검사
+    if (!reviewForm.comment || reviewForm.comment.trim().length === 0) {
+      return; // 텍스트박스 아래 메시지로 안내
+    }
+
+    if (reviewForm.comment.trim().length < 10) {
+      return; // 텍스트박스 아래 메시지로 안내
+    }
+
+    if (reviewForm.comment.length > 1000) {
+      return; // 텍스트박스 아래 메시지로 안내
+    }
+
+    // 평점 유효성 검사
+    if (!reviewForm.rating || reviewForm.rating < 1 || reviewForm.rating > 5) {
+      alert("평점을 1~5점 사이에서 선택해주세요.");
+      return;
+    }
+
+    if (!accommodation || !availableReservationId) {
+      alert("숙소 정보나 예약 정보를 찾을 수 없습니다.");
+      return;
+    }
+
+    try {
+      setIsSubmittingReview(true);
+
+      // 이미지가 있으면 이미지 포함하여 리뷰 작성
+      if (reviewImages.length > 0) {
+        await reviewApi.createReviewWithImages(
+          accommodation.id,
+          availableReservationId,
+          reviewForm.rating,
+          reviewForm.comment.trim(),
+          reviewImages
+        );
+      } else {
+        // 이미지 없이 리뷰 작성
+        const reviewData = {
+          accommodationId: accommodation.id,
+          reservationId: availableReservationId,
+          rating: reviewForm.rating,
+          comment: reviewForm.comment.trim(),
+        };
+        await reviewApi.createReview(reviewData);
+      }
+
+      alert("리뷰가 성공적으로 작성되었습니다!");
+      closeReviewForm();
+
+      // 리뷰 목록 새로고침
+      await loadReviews();
+      setCanWriteReview(false); // 작성 완료 후 다시 작성 불가
+    } catch (error: any) {
+      console.error("리뷰 작성 실패:", error);
+      alert(error.response?.data?.message || "리뷰 작성에 실패했습니다.");
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
+  // 별점 렌더링 (클릭 가능)
+  const renderClickableStars = (
+    currentRating: number,
+    onRatingChange: (rating: number) => void
+  ) => {
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      stars.push(
+        <button
+          key={i}
+          type="button"
+          onClick={() => onRatingChange(i)}
+          className="focus:outline-none"
+        >
+          <svg
+            className={`w-8 h-8 ${
+              i <= currentRating ? "text-yellow-400" : "text-gray-300"
+            } fill-current hover:text-yellow-400 transition-colors`}
+            viewBox="0 0 20 20"
+          >
+            <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+          </svg>
+        </button>
+      );
+    }
+    return stars;
   };
 
   const renderStars = (rating: number) => {
@@ -506,6 +760,433 @@ export default function AccommodationDetailPage() {
                     </div>
                   </div>
                 )}
+
+                {/* 리뷰 섹션 */}
+                <div className="mb-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-semibold text-gray-900">
+                      리뷰 ({reviewStats?.totalReviews || 0})
+                    </h2>
+                    <div className="flex items-center space-x-4">
+                      {reviewStats && reviewStats.totalReviews > 0 && (
+                        <div className="flex items-center space-x-2">
+                          <div className="flex items-center">
+                            {renderStars(reviewStats.averageRating)}
+                          </div>
+                          <span className="text-lg font-semibold text-gray-900">
+                            {reviewStats.averageRating.toFixed(1)}
+                          </span>
+                        </div>
+                      )}
+                      {user && canWriteReview && (
+                        <button
+                          onClick={openReviewForm}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                          리뷰 작성
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 평점 분포 */}
+                  {reviewStats && reviewStats.totalReviews > 0 && (
+                    <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                      <h3 className="text-md font-medium text-gray-900 mb-3">
+                        평점 분포
+                      </h3>
+                      <div className="space-y-2">
+                        {[5, 4, 3, 2, 1].map((rating) => {
+                          const count =
+                            reviewStats.ratingCounts[rating - 1] || 0;
+                          const percentage =
+                            reviewStats.totalReviews > 0
+                              ? (count / reviewStats.totalReviews) * 100
+                              : 0;
+
+                          return (
+                            <div
+                              key={rating}
+                              className="flex items-center space-x-2"
+                            >
+                              <span className="text-sm text-gray-600 w-6">
+                                {rating}점
+                              </span>
+                              <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className="bg-yellow-400 h-2 rounded-full transition-all"
+                                  style={{ width: `${percentage}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-sm text-gray-600 w-12 text-right">
+                                {count}개
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 리뷰 목록 */}
+                  {reviews.length > 0 ? (
+                    <div className="space-y-4">
+                      {reviews.map((review) => (
+                        <div
+                          key={review.id}
+                          className="border border-gray-200 rounded-lg p-4"
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-center space-x-2">
+                              <div className="flex">
+                                {renderStars(review.rating)}
+                              </div>
+                              <span className="text-sm text-gray-600">
+                                {review.createdBy}
+                              </span>
+                            </div>
+                            <span className="text-sm text-gray-500">
+                              {new Date(review.createdAt).toLocaleDateString(
+                                "ko-KR"
+                              )}
+                            </span>
+                          </div>
+
+                          <p className="text-gray-900 mb-2">{review.comment}</p>
+
+                          {/* 리뷰 이미지 표시 */}
+                          {review.images && review.images.length > 0 && (
+                            <div className="mt-3">
+                              <div className="text-xs text-gray-500 mb-2">
+                                리뷰 이미지 ({review.images.length}개)
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                {review.images
+                                  .slice(0, 4)
+                                  .map((image, index) => {
+                                    const imageUrl = getImageUrl(
+                                      image.filePath
+                                    );
+                                    console.log("Rendering image:", image);
+                                    console.log("Full image URL:", imageUrl);
+                                    return (
+                                      <div key={image.id} className="relative">
+                                        <img
+                                          src={imageUrl}
+                                          alt={`리뷰 이미지 ${index + 1}`}
+                                          className="w-full h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                                          onClick={() => {
+                                            console.log(
+                                              "Opening image URL:",
+                                              imageUrl
+                                            );
+                                            window.open(imageUrl, "_blank");
+                                          }}
+                                          onError={(e) => {
+                                            console.error(
+                                              "Failed to load image:",
+                                              imageUrl
+                                            );
+                                            console.error(
+                                              "Image object:",
+                                              image
+                                            );
+                                          }}
+                                        />
+                                        {/* 4개 이상일 때 더보기 표시 */}
+                                        {index === 3 &&
+                                          review.images!.length > 4 && (
+                                            <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
+                                              <span className="text-white text-sm font-medium">
+                                                +{review.images!.length - 4}
+                                              </span>
+                                            </div>
+                                          )}
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 이미지 개수만 표시 (백엔드에서 images 배열을 제공하지 않는 경우) */}
+                          {review.imageCount > 0 &&
+                            (!review.images || review.images.length === 0) && (
+                              <div className="text-sm text-gray-500">
+                                📷 첨부 이미지: {review.imageCount}장
+                              </div>
+                            )}
+                        </div>
+                      ))}
+
+                      {/* 더보기 버튼 */}
+                      {hasMoreReviews && (
+                        <div className="text-center">
+                          <button
+                            onClick={loadMoreReviews}
+                            className="px-6 py-2 text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50 transition-colors"
+                          >
+                            리뷰 더보기
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <div className="text-lg mb-2">아직 리뷰가 없습니다</div>
+                      <div className="text-sm">
+                        첫 번째 리뷰를 작성해보세요!
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 리뷰 작성 폼 */}
+                  {showReviewForm && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="p-6">
+                          <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-semibold text-gray-900">
+                              리뷰 작성
+                            </h3>
+                            <button
+                              onClick={closeReviewForm}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <svg
+                                className="w-6 h-6"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M6 18L18 6M6 6l12 12"
+                                />
+                              </svg>
+                            </button>
+                          </div>
+
+                          <div className="space-y-6">
+                            {/* 별점 선택 */}
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                평점
+                              </label>
+                              <div className="flex items-center space-x-1">
+                                {renderClickableStars(
+                                  reviewForm.rating,
+                                  (rating) =>
+                                    setReviewForm({ ...reviewForm, rating })
+                                )}
+                                <span className="ml-2 text-sm text-gray-600">
+                                  {reviewForm.rating}점
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* 리뷰 내용 */}
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                리뷰 내용
+                              </label>
+                              <textarea
+                                value={reviewForm.comment}
+                                onChange={(e) =>
+                                  setReviewForm({
+                                    ...reviewForm,
+                                    comment: e.target.value,
+                                  })
+                                }
+                                rows={6}
+                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                  reviewForm.comment &&
+                                  reviewForm.comment.trim().length > 0 &&
+                                  reviewForm.comment.trim().length < 10
+                                    ? "border-red-300"
+                                    : reviewForm.comment &&
+                                      reviewForm.comment.length > 1000
+                                    ? "border-red-300"
+                                    : "border-gray-300"
+                                }`}
+                                placeholder="숙박 경험을 자세히 작성해주세요. (최소 10자 이상)"
+                              />
+                              <div className="mt-1 flex justify-between items-center">
+                                <div className="text-sm">
+                                  {!reviewForm.comment ||
+                                  reviewForm.comment.trim().length === 0 ? (
+                                    <span className="text-gray-500">
+                                      리뷰 내용을 입력해주세요.
+                                    </span>
+                                  ) : reviewForm.comment.trim().length < 10 ? (
+                                    <span className="text-red-500">
+                                      최소 10자 이상 입력해주세요. (현재{" "}
+                                      {reviewForm.comment.trim().length}자)
+                                    </span>
+                                  ) : reviewForm.comment.length > 1000 ? (
+                                    <span className="text-red-500">
+                                      1000자 이하로 입력해주세요. (현재{" "}
+                                      {reviewForm.comment.length}자)
+                                    </span>
+                                  ) : (
+                                    <span className="text-green-600">
+                                      ✓ 입력 완료
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-sm text-gray-500">
+                                  {reviewForm.comment?.length || 0}/1000자
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 이미지 업로드 */}
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                사진 첨부 (선택사항)
+                              </label>
+                              <div className="space-y-4">
+                                {/* 파일 선택 버튼 */}
+                                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
+                                  <input
+                                    type="file"
+                                    id="review-images"
+                                    multiple
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                      const files = Array.from(
+                                        e.target.files || []
+                                      );
+                                      const validFiles = files.filter(
+                                        (file) => {
+                                          // 파일 크기 제한 (5MB)
+                                          if (file.size > 5 * 1024 * 1024) {
+                                            alert(
+                                              `${file.name}은(는) 파일 크기가 5MB를 초과합니다.`
+                                            );
+                                            return false;
+                                          }
+                                          // 이미지 파일 확인
+                                          if (!file.type.startsWith("image/")) {
+                                            alert(
+                                              `${file.name}은(는) 이미지 파일이 아닙니다.`
+                                            );
+                                            return false;
+                                          }
+                                          return true;
+                                        }
+                                      );
+
+                                      // 최대 5개 제한
+                                      const totalFiles =
+                                        reviewImages.length + validFiles.length;
+                                      if (totalFiles > 5) {
+                                        alert(
+                                          "최대 5개까지만 업로드할 수 있습니다."
+                                        );
+                                        const allowedCount =
+                                          5 - reviewImages.length;
+                                        setReviewImages([
+                                          ...reviewImages,
+                                          ...validFiles.slice(0, allowedCount),
+                                        ]);
+                                      } else {
+                                        setReviewImages([
+                                          ...reviewImages,
+                                          ...validFiles,
+                                        ]);
+                                      }
+
+                                      // 파일 입력 초기화
+                                      e.target.value = "";
+                                    }}
+                                    className="hidden"
+                                  />
+                                  <label
+                                    htmlFor="review-images"
+                                    className="cursor-pointer"
+                                  >
+                                    <div className="text-gray-500">
+                                      <svg
+                                        className="mx-auto h-12 w-12 text-gray-400"
+                                        stroke="currentColor"
+                                        fill="none"
+                                        viewBox="0 0 48 48"
+                                      >
+                                        <path
+                                          d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                                          strokeWidth={2}
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                      </svg>
+                                      <p className="mt-2 text-sm">
+                                        클릭하여 사진을 선택하세요
+                                      </p>
+                                      <p className="text-xs text-gray-400">
+                                        최대 5개, 각 파일 5MB 이하
+                                      </p>
+                                    </div>
+                                  </label>
+                                </div>
+
+                                {/* 선택된 이미지 미리보기 */}
+                                {reviewImages.length > 0 && (
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    {reviewImages.map((file, index) => (
+                                      <div key={index} className="relative">
+                                        <img
+                                          src={URL.createObjectURL(file)}
+                                          alt={`미리보기 ${index + 1}`}
+                                          className="w-full h-24 object-cover rounded-lg border"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setReviewImages(
+                                              reviewImages.filter(
+                                                (_, i) => i !== index
+                                              )
+                                            );
+                                          }}
+                                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
+                                        >
+                                          ×
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 버튼 */}
+                            <div className="flex justify-end space-x-3">
+                              <button
+                                onClick={closeReviewForm}
+                                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                                disabled={isSubmittingReview}
+                              >
+                                취소
+                              </button>
+                              <button
+                                onClick={submitReview}
+                                disabled={isSubmittingReview}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              >
+                                {isSubmittingReview
+                                  ? "작성 중..."
+                                  : "리뷰 작성"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* 오른쪽: 예약 카드 */}
