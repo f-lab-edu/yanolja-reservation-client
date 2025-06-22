@@ -125,7 +125,7 @@ export default function HomePage() {
                 >
                   내 예약 확인
                 </Link>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <Link
                     href="/my-coupons"
                     className="block bg-orange-500 hover:bg-orange-600 text-white py-2 px-3 rounded-lg transition-colors duration-200 text-center text-sm"
@@ -137,6 +137,12 @@ export default function HomePage() {
                     className="block bg-blue-500 hover:bg-blue-600 text-white py-2 px-3 rounded-lg transition-colors duration-200 text-center text-sm"
                   >
                     결제 내역
+                  </Link>
+                  <Link
+                    href="/my-reviews"
+                    className="block bg-purple-500 hover:bg-purple-600 text-white py-2 px-3 rounded-lg transition-colors duration-200 text-center text-sm"
+                  >
+                    내 리뷰
                   </Link>
                 </div>
                 {user?.role === "ADMIN" && (
