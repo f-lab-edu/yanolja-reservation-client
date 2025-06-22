@@ -92,6 +92,21 @@ class ApiClient {
         ? localStorage.getItem("accessToken")
         : null;
 
+    // 인증이 필요한 API 엔드포인트인지 확인
+    const requiresAuth =
+      !endpoint.includes("/api/auth/") &&
+      !endpoint.includes("/api/portal/accommodations/search") &&
+      !endpoint.includes("/api/accommodations/images/") &&
+      !endpoint.includes("/api/payments/approve") &&
+      !endpoint.includes("/api/payments/webhook") &&
+      !endpoint.includes("/api/toss-payments/");
+
+    if (requiresAuth && !token) {
+      throw new Error("인증이 필요합니다. 다시 로그인해주세요.");
+    }
+
+    console.log(`API 요청: ${endpoint}, 토큰 있음: ${!!token}`);
+
     const config: RequestInit = {
       headers: {
         "Content-Type": "application/json",
@@ -104,19 +119,26 @@ class ApiClient {
     try {
       const response = await fetch(url, config);
 
+      console.log(`API 응답 상태: ${response.status} ${response.statusText}`);
+      console.log("응답 헤더:", Object.fromEntries(response.headers.entries()));
+
       // 응답이 비어있거나 JSON이 아닌 경우 처리
       let data;
       try {
         const text = await response.text();
+        console.log("응답 텍스트:", text);
         data = text ? JSON.parse(text) : {};
       } catch (jsonError) {
         console.error("JSON 파싱 오류:", jsonError);
         throw new Error("서버 응답 형식이 올바르지 않습니다.");
       }
 
+      console.log("파싱된 응답 데이터:", data);
+
       if (!response.ok || !data.success) {
         const errorMessage =
           data.message || `HTTP ${response.status}: ${response.statusText}`;
+        console.error("API 오류:", errorMessage, data);
         const error = new Error(errorMessage);
         // @ts-ignore
         error.code = data.code;
@@ -930,36 +952,18 @@ export const couponApi = {
 export const orderApi = {
   // 주문 생성
   createOrder: async (data: OrderRequest): Promise<OrderResponse> => {
-    const response = await fetch(`${API_BASE_URL}/api/orders`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...getAuthHeaders(),
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      throw new Error("주문 생성 중 오류가 발생했습니다.");
-    }
-
-    const result = await response.json();
-    return result.data;
+    console.log("orderApi.createOrder 호출 시작");
+    const response = await apiClient.post<OrderResponse>("/api/orders", data);
+    console.log("orderApi.createOrder 응답:", response);
+    return response.data;
   },
 
   // 주문 상세 조회
   getOrder: async (orderNumber: string): Promise<OrderResponse> => {
-    const response = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}`, {
-      method: "GET",
-      headers: getAuthHeaders(),
-    });
-
-    if (!response.ok) {
-      throw new Error("주문 정보 조회 중 오류가 발생했습니다.");
-    }
-
-    const result = await response.json();
-    return result.data;
+    const response = await apiClient.get<OrderResponse>(
+      `/api/orders/${orderNumber}`
+    );
+    return response.data;
   },
 
   // 사용자 주문 목록 조회
@@ -972,52 +976,25 @@ export const orderApi = {
     totalElements: number;
     totalPages: number;
   }> => {
-    const response = await fetch(
-      `${API_BASE_URL}/api/orders/user/${userId}?page=${page}&size=${size}`,
-      {
-        method: "GET",
-        headers: getAuthHeaders(),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("주문 목록 조회 중 오류가 발생했습니다.");
-    }
-
-    const result = await response.json();
-    return result.data;
+    const response = await apiClient.get<{
+      content: OrderResponse[];
+      totalElements: number;
+      totalPages: number;
+    }>(`/api/orders/user/${userId}?page=${page}&size=${size}`);
+    return response.data;
   },
 
   // 주문 확정
   confirmOrder: async (orderNumber: string): Promise<void> => {
-    const response = await fetch(
-      `${API_BASE_URL}/api/orders/${orderNumber}/confirm`,
-      {
-        method: "PATCH",
-        headers: getAuthHeaders(),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("주문 확정 중 오류가 발생했습니다.");
-    }
+    await apiClient.patch<void>(`/api/orders/${orderNumber}/confirm`);
   },
 
   // 주문 취소
   cancelOrder: async (orderNumber: string, reason?: string): Promise<void> => {
-    const response = await fetch(
-      `${API_BASE_URL}/api/orders/${orderNumber}/cancel${
-        reason ? `?reason=${encodeURIComponent(reason)}` : ""
-      }`,
-      {
-        method: "PATCH",
-        headers: getAuthHeaders(),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("주문 취소 중 오류가 발생했습니다.");
-    }
+    const endpoint = reason
+      ? `/api/orders/${orderNumber}/cancel?reason=${encodeURIComponent(reason)}`
+      : `/api/orders/${orderNumber}/cancel`;
+    await apiClient.patch<void>(endpoint);
   },
 };
 

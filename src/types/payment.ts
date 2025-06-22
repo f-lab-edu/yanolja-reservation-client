@@ -51,13 +51,12 @@ export interface CardInfo {
 }
 
 export enum PaymentMethod {
-  CREDIT_CARD = "CREDIT_CARD",
-  DEBIT_CARD = "DEBIT_CARD",
+  CARD = "CARD",
   BANK_TRANSFER = "BANK_TRANSFER",
   VIRTUAL_ACCOUNT = "VIRTUAL_ACCOUNT",
-  TOSS_PAY = "TOSS_PAY",
-  KAKAO_PAY = "KAKAO_PAY",
-  POINTS = "POINTS",
+  PAYCO = "PAYCO",
+  TOSS = "TOSS",
+  POINT = "POINT",
 }
 
 export enum PaymentStatus {
